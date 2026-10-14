@@ -122,13 +122,6 @@ function groupByDay(forecast: SimpleForecast[]): Map<string, SimpleForecast[]> {
   return days;
 }
 
-function getPeriodKey(hour: number): "Morning" | "Noon" | "Evening" | "Night" {
-  if (hour >= 5 && hour < 11) return "Morning";
-  if (hour >= 11 && hour < 17) return "Noon";
-  if (hour >= 17 && hour < 23) return "Evening";
-  return "Night";
-}
-
 // ANSI-aware string width (ignores escape codes)
 function ansiWidth(str: string): number {
   return str.replace(/\x1b\[[0-9;]*m/g, "").length;
@@ -219,7 +212,7 @@ export function renderTerminal(
     lines.push("");
   }
   
-  // 3-day forecast table
+  // 3-day forecast table - show actual hours from BMKG
   let dayCount = 0;
   for (const [date, dayForecasts] of days) {
     if (dayCount >= 3) break;
@@ -228,65 +221,48 @@ export function renderTerminal(
     const dayName = new Date(date).toLocaleDateString("en-US", { weekday: "short", day: "numeric", month: "short" });
     lines.push(`${ANSI.bgBlue}${ANSI.white} ${dayName} ${ANSI.reset}`);
     
-    // Group by period
-    const periods = new Map<string, SimpleForecast[]>();
-    for (const f of dayForecasts) {
-      const hour = new Date(f.time).getHours();
-      const period = getPeriodKey(hour);
-      if (!periods.has(period)) periods.set(period, []);
-      periods.get(period)!.push(f);
-    }
+    // Show all 3-hour slots for this day (up to 8)
+    const slots = dayForecasts.slice(0, 8);
     
-    // Use middle forecast for each period
-    const periodOrder = ["Morning", "Noon", "Evening", "Night"];
-    const periodData: Record<string, SimpleForecast> = {};
-    for (const p of periodOrder) {
-      const arr = periods.get(p);
-      if (arr && arr.length > 0) {
-        periodData[p] = arr[Math.floor(arr.length / 2)];
-      }
-    }
+    // Table header with actual hours
+    lines.push("┌──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┐");
     
-    // Table header (each cell = 18 chars wide: 16 content + borders)
-    lines.push("┌──────────────────┬──────────────────┬──────────────────┬──────────────────┐");
-    lines.push("│     Morning      │      Noon        │    Evening       │      Night       │");
-    lines.push("├──────────────────┼──────────────────┼──────────────────┼──────────────────┤");
-    
+    let timeRow = "│";
     let iconRow = "│";
     let tempRow = "│";
     let windRow = "│";
     let rainRow = "│";
     
-    for (const p of periodOrder) {
-      const f = periodData[p];
-      if (f) {
-        const hour = new Date(f.time).getHours();
-        const icon = getAsciiIcon(f.weather || 0, hour);
-        const wIcon = getIcon(f.weather || 0, hour);
-        
-        // Each cell content max 16 chars, padded to 16
-        const iconContent = ` ${icon} ${wIcon.label}`;
-        const tempContent = ` ${ansiTemp(f.temp)}`;
-        const windContent = ` ${formatWind(f.windSpeed, f.windDir)}`;
-        const rainContent = ` ${f.rainProb}% ${f.humidity}%`;
-        
-        iconRow += padCell(iconContent, 16) + " │";
-        tempRow += padCell(tempContent, 16) + " │";
-        windRow += padCell(windContent, 16) + " │";
-        rainRow += padCell(rainContent, 16) + " │";
-      } else {
-        iconRow += " ".repeat(16) + " │";
-        tempRow += " ".repeat(16) + " │";
-        windRow += " ".repeat(16) + " │";
-        rainRow += " ".repeat(16) + " │";
-      }
+    for (const f of slots) {
+      const hour = new Date(f.time).getHours();
+      const timeStr = `${hour.toString().padStart(2, "0")}:00`;
+      const icon = getAsciiIcon(f.weather || 0, hour);
+      const wIcon = getIcon(f.weather || 0, hour);
+      
+      // Each cell: 6 chars wide (5 content + 1 space padding)
+      timeRow += padCell(` ${timeStr} `, 6) + "│";
+      iconRow += padCell(` ${icon} `, 6) + "│";
+      tempRow += padCell(` ${ansiTemp(f.temp)} `, 6) + "│";
+      windRow += padCell(` ${formatWind(f.windSpeed, f.windDir)} `, 6) + "│";
+      rainRow += padCell(` ${f.rainProb}% ${f.humidity}% `, 6) + "│";
     }
     
+    // Fill remaining empty cells if less than 8 slots
+    const remaining = 8 - slots.length;
+    for (let i = 0; i < remaining; i++) {
+      timeRow += " ".repeat(6) + "│";
+      iconRow += " ".repeat(6) + "│";
+      tempRow += " ".repeat(6) + "│";
+      windRow += " ".repeat(6) + "│";
+      rainRow += " ".repeat(6) + "│";
+    }
+    
+    lines.push(timeRow);
     lines.push(iconRow);
     lines.push(tempRow);
     lines.push(windRow);
     lines.push(rainRow);
-    lines.push("└──────────────────┴──────────────────┴──────────────────┴──────────────────┘");
+    lines.push("└──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┘");
     lines.push("");
   }
   
