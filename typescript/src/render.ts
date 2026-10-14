@@ -129,6 +129,21 @@ function getPeriodKey(hour: number): "Morning" | "Noon" | "Evening" | "Night" {
   return "Night";
 }
 
+// ANSI-aware string width (ignores escape codes)
+function ansiWidth(str: string): number {
+  return str.replace(/\x1b\[[0-9;]*m/g, "").length;
+}
+
+// Pad/truncate to exact visual width
+function padCell(content: string, width: number): string {
+  const w = ansiWidth(content);
+  if (w >= width) {
+    // Truncate preserving ANSI codes (simple approach)
+    return content.slice(0, width + (content.length - w));
+  }
+  return content + " ".repeat(width - w);
+}
+
 // ANSI color codes
 const ANSI = {
   reset: "\x1b[0m",
@@ -232,7 +247,7 @@ export function renderTerminal(
       }
     }
     
-    // Table header
+    // Table header (each cell = 18 chars wide: 16 content + borders)
     lines.push("┌──────────────────┬──────────────────┬──────────────────┬──────────────────┐");
     lines.push("│     Morning      │      Noon        │    Evening       │      Night       │");
     lines.push("├──────────────────┼──────────────────┼──────────────────┼──────────────────┤");
@@ -249,15 +264,21 @@ export function renderTerminal(
         const icon = getAsciiIcon(f.weather || 0, hour);
         const wIcon = getIcon(f.weather || 0, hour);
         
-        iconRow += `  ${icon}  ${wIcon.label.padEnd(14)} │`;
-        tempRow += `     ${ansiTemp(f.temp).padEnd(14)} │`;
-        windRow += `  ${formatWind(f.windSpeed, f.windDir).padEnd(14)} │`;
-        rainRow += `   ${f.rainProb}% ${f.humidity}%`.padEnd(16) + " │";
+        // Each cell content max 16 chars, padded to 16
+        const iconContent = ` ${icon} ${wIcon.label}`;
+        const tempContent = ` ${ansiTemp(f.temp)}`;
+        const windContent = ` ${formatWind(f.windSpeed, f.windDir)}`;
+        const rainContent = ` ${f.rainProb}% ${f.humidity}%`;
+        
+        iconRow += padCell(iconContent, 16) + " │";
+        tempRow += padCell(tempContent, 16) + " │";
+        windRow += padCell(windContent, 16) + " │";
+        rainRow += padCell(rainContent, 16) + " │";
       } else {
-        iconRow += "                  │";
-        tempRow += "                  │";
-        windRow += "                  │";
-        rainRow += "                  │";
+        iconRow += " ".repeat(16) + " │";
+        tempRow += " ".repeat(16) + " │";
+        windRow += " ".repeat(16) + " │";
+        rainRow += " ".repeat(16) + " │";
       }
     }
     
