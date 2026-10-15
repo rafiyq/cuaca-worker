@@ -38,62 +38,51 @@ export interface Warning {
   geocode?: Record<string, string>;
 }
 
-// Weather code to multi-line ASCII art (3 lines tall like wttr.in) - wider for visibility
-const ASCII_ICONS: Record<number, { day: string[]; night: string[]; label: string }> = {
+// Weather code to multi-line ASCII art (3 lines tall, fixed 14-char width, no labels)
+const ASCII_ICONS: Record<number, { day: string[]; night: string[] }> = {
   0: {  // Cerah / Sunny
     day: ["     .--.     ", "    /    \\    ", "   '      '   "], 
-    night: ["     `--'     ", "    \\    /    ", "   '      '   "], 
-    label: "Cerah" 
+    night: ["     `--'     ", "    \\    /    ", "   '      '   "]
   },
   1: {  // Cerah Berawan / Partly cloudy
     day: ["     .--.     ", "   .'  '.    ", "  '      '   "], 
-    night: ["     `--'     ", "   .'  '.    ", "  '      '   "], 
-    label: "Cerah Berawan" 
+    night: ["     `--'     ", "   .'  '.    ", "  '      '   "]
   },
   2: {  // Berawan / Cloudy
     day: ["    .--.      ", "   /    \\     ", "  '      '   "], 
-    night: ["    .--.      ", "   /    \\     ", "  '      '   "], 
-    label: "Berawan" 
+    night: ["    .--.      ", "   /    \\     ", "  '      '   "]
   },
   3: {  // Berawan / Overcast
     day: ["    .--.      ", "   /    \\     ", "  '      '   "], 
-    night: ["    .--.      ", "   /    \\     ", "  '      '   "], 
-    label: "Berawan" 
+    night: ["    .--.      ", "   /    \\     ", "  '      '   "]
   },
   4: {  // Berawan Tebal / Overcast
     day: ["    .--.      ", "   /    \\     ", "  '      '   "], 
-    night: ["    .--.      ", "   /    \\     ", "  '      '   "], 
-    label: "Berawan Tebal" 
+    night: ["    .--.      ", "   /    \\     ", "  '      '   "]
   },
   5: {  // Kabut / Fog
     day: ["   _ - _ - _  ", "  _ - _ - _  ", "   _ - _ - _  "], 
-    night: ["   _ - _ - _  ", "  _ - _ - _  ", "   _ - _ - _  "], 
-    label: "Kabut" 
+    night: ["   _ - _ - _  ", "  _ - _ - _  ", "   _ - _ - _  "]
   },
   10: {  // Hujan Ringan / Light rain
     day: ["     .--.     ", "  .'    '.    ", " '  |  | '  "], 
-    night: ["     `--'     ", "  .'    '.    ", " '  |  | '  "], 
-    label: "Hujan Ringan" 
+    night: ["     `--'     ", "  .'    '.    ", " '  |  | '  "]
   },
   11: {  // Hujan / Rain
     day: ["     .--.     ", "  .'    '.    ", " '  |  | '  "], 
-    night: ["     `--'     ", "  .'    '.    ", " '  |  | '  "], 
-    label: "Hujan" 
+    night: ["     `--'     ", "  .'    '.    ", " '  |  | '  "]
   },
   12: {  // Hujan Lebat / Heavy rain
     day: ["     .--.     ", "  .'    '.    ", " '  || || '  "], 
-    night: ["     `--'     ", "  .'    '.    ", " '  || || '  "], 
-    label: "Hujan Lebat" 
+    night: ["     `--'     ", "  .'    '.    ", " '  || || '  "]
   },
   13: {  // Hujan Petir / Thunderstorm
     day: ["     .--.     ", "  .' /\\ '.    ", " '  /  \\ '  "], 
-    night: ["     `--'     ", "  .' /\\ '.    ", " '  /  \\ '  "], 
-    label: "Hujan Petir" 
+    night: ["     `--'     ", "  .' /\\ '.    ", " '  /  \\ '  "]
   },
   14: {  // Hujan Petir Lebat / Heavy thunderstorm
     day: ["     .--.     ", "  .' /\\ '.    ", " '  /  \\ '  "], 
-    night: ["     `--'     ", "  .' /\\ '.    ", " '  /  \\ '  "], 
-    label: "Hujan Petir Lebat" 
+    night: ["     `--'     ", "  .' /\\ '.    ", " '  /  \\ '  "]
   },
 };
 
@@ -105,8 +94,21 @@ function getAsciiIcon(weatherCode: number, hour: number): string[] {
 
 function getIconLabel(weatherCode: number, hour: number): string {
   const isDay = hour >= 6 && hour < 18;
-  const icon = ASCII_ICONS[weatherCode] || ASCII_ICONS[0];
-  return icon.label;
+  const labels: Record<number, { day: string; night: string }> = {
+    0: { day: "Cerah", night: "Cerah" },
+    1: { day: "Cerah Berawan", night: "Cerah Berawan" },
+    2: { day: "Berawan", night: "Berawan" },
+    3: { day: "Berawan", night: "Berawan" },
+    4: { day: "Berawan Tebal", night: "Berawan Tebal" },
+    5: { day: "Kabut", night: "Kabut" },
+    10: { day: "Hujan Ringan", night: "Hujan Ringan" },
+    11: { day: "Hujan", night: "Hujan" },
+    12: { day: "Hujan Lebat", night: "Hujan Lebat" },
+    13: { day: "Hujan Petir", night: "Hujan Petir" },
+    14: { day: "Hujan Petir Lebat", night: "Hujan Petir Lebat" },
+  };
+  const label = labels[weatherCode] || labels[0];
+  return isDay ? label.day : label.night;
 }
 
 // Wind direction to arrow
@@ -297,6 +299,8 @@ export function renderTerminal(
         const icon = getAsciiIcon(f.weather || 0, hour);
         const label = getIconLabel(f.weather || 0, hour);
         
+        // Line 0: icon + label
+        // Lines 1-2: just icon
         colBlocks.push([
           padCell(` ${icon[0]} ${label} `, cellW),
           padCell(` ${icon[1]} `, cellW),
