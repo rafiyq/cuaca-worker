@@ -141,13 +141,6 @@ function groupByDay(forecast: SimpleForecast[]): Map<string, SimpleForecast[]> {
   return days;
 }
 
-function getPeriodKey(hour: number): "Morning" | "Noon" | "Evening" | "Night" {
-  if (hour >= 5 && hour < 11) return "Morning";
-  if (hour >= 11 && hour < 17) return "Noon";
-  if (hour >= 17 && hour < 23) return "Evening";
-  return "Night";
-}
-
 // ANSI-aware string width (ignores escape codes)
 function ansiWidth(str: string): number {
   return str.replace(/\x1b\[[0-9;]*m/g, "").length;
@@ -238,7 +231,7 @@ export function renderTerminal(
     lines.push("");
   }
   
-  // 3-day forecast table - wttr.in style with period headers
+  // 3-day forecast table - actual BMKG hours as columns
   let dayCount = 0;
   for (const [date, dayForecasts] of days) {
     if (dayCount >= 3) break;
@@ -247,29 +240,22 @@ export function renderTerminal(
     const dayName = new Date(date).toLocaleDateString("en-US", { weekday: "short", day: "2-digit", month: "short" });
     lines.push(`${ANSI.bgBlue}${ANSI.white} ${dayName} ${ANSI.reset}`);
     
-    // Group forecasts by period
-    const periods = new Map<string, SimpleForecast[]>();
-    for (const f of dayForecasts) {
-      const hour = new Date(f.time).getHours();
-      const period = getPeriodKey(hour);
-      if (!periods.has(period)) periods.set(period, []);
-      periods.get(period)!.push(f);
-    }
+    // Sort by hour and take up to 8 slots (24 hours)
+    const sortedSlots = dayForecasts
+      .sort((a, b) => new Date(a.time).getHours() - new Date(b.time).getHours())
+      .slice(0, 8);
     
-    // Use first forecast of each period (most representative)
-    const periodOrder = ["Morning", "Noon", "Evening", "Night"];
-    const periodData: Record<string, SimpleForecast> = {};
-    for (const p of periodOrder) {
-      const arr = periods.get(p);
-      if (arr && arr.length > 0) {
-        periodData[p] = arr[0];
-      }
-    }
+    // Build columns from actual slots with time strings
+    const slots = sortedSlots.map(f => ({
+      hour: new Date(f.time).getHours(),
+      timeStr: `${new Date(f.time).getHours().toString().padStart(2, "0")}:00`,
+      forecast: f
+    }));
     
-    const ICON_W = 14;  // icon width
-    const DATA_W = 14;  // data width
+    const ICON_W = 14;
+    const DATA_W = 14;
     const cellW = ICON_W + DATA_W; // 28 total
-    const n = periodOrder.length;
+    const n = slots.length;
     
     // Top border with day header
     let top = "┌";
@@ -278,10 +264,10 @@ export function renderTerminal(
     }
     lines.push(top);
     
-    // Period headers
+    // Hour headers (e.g., 08:00, 11:00, 14:00...)
     let headerRow = "│";
-    for (const p of periodOrder) {
-      headerRow += padCell(` ${p} `, cellW) + "│";
+    for (const s of slots) {
+      headerRow += padCell(` ${s.timeStr} `, cellW) + "│";
     }
     lines.push(headerRow);
     
@@ -294,31 +280,21 @@ export function renderTerminal(
     
     // Build each column: 5 rows, icon on LEFT of each row
     const colBlocks: string[][] = [];
-    for (const p of periodOrder) {
-      const f = periodData[p];
-      if (f) {
-        const hour = new Date(f.time).getHours();
-        const icon = getAsciiIcon(f.weather || 0, hour);
-        const label = getIconLabel(f.weather || 0, hour);
-        
-        // 5 data rows, icon on LEFT of each
-        const emptyIcon = " ".repeat(ICON_W);
-        colBlocks.push([
-          padCell(` ${icon[0]} ` + ` ${label} `, cellW),
-          padCell(` ${icon[1]} ` + ` ${ansiTemp(f.temp)} `, cellW),
-          padCell(` ${icon[2]} ` + ` ${formatWind(f.windSpeed, f.windDir)} `, cellW),
-          padCell(` ${emptyIcon} ` + ` ${f.cloudCover}% cloud `, cellW),
-          padCell(` ${emptyIcon} ` + ` R${f.rainProb}% H${f.humidity}% `, cellW),
-        ]);
-      } else {
-        colBlocks.push([
-          " ".repeat(cellW),
-          " ".repeat(cellW),
-          " ".repeat(cellW),
-          " ".repeat(cellW),
-          " ".repeat(cellW),
-        ]);
-      }
+    for (const s of slots) {
+      const f = s.forecast;
+      const hour = s.hour;
+      const icon = getAsciiIcon(f.weather || 0, hour);
+      const label = getIconLabel(f.weather || 0, hour);
+      
+      // 5 data rows, icon on LEFT of each
+      const emptyIcon = " ".repeat(ICON_W);
+      colBlocks.push([
+        padCell(` ${icon[0]} ` + ` ${label} `, cellW),
+        padCell(` ${icon[1]} ` + ` ${ansiTemp(f.temp)} `, cellW),
+        padCell(` ${icon[2]} ` + ` ${formatWind(f.windSpeed, f.windDir)} `, cellW),
+        padCell(` ${emptyIcon} ` + ` ${f.cloudCover}% cloud `, cellW),
+        padCell(` ${emptyIcon} ` + ` R${f.rainProb}% H${f.humidity}% `, cellW),
+      ]);
     }
     
     // Print 5 content rows (icon on left of each)
