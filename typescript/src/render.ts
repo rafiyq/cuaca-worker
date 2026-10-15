@@ -211,7 +211,7 @@ export function renderTerminal(
     lines.push("");
   }
   
-  // 3-day forecast table - 4 columns per row for readability
+  // 3-day forecast table - icon inline with temp
   let dayCount = 0;
   for (const [date, dayForecasts] of days) {
     if (dayCount >= 3) break;
@@ -220,7 +220,7 @@ export function renderTerminal(
     const dayName = new Date(date).toLocaleDateString("en-US", { weekday: "short", day: "numeric", month: "short" });
     lines.push(`${ANSI.bgBlue}${ANSI.white} ${dayName} ${ANSI.reset}`);
     
-    // Sort by hour and take up to 8 slots (24 hours)
+    // Sort by hour and take up to 8 slots
     const slots = dayForecasts
       .sort((a, b) => new Date(a.time).getHours() - new Date(b.time).getHours())
       .slice(0, 8);
@@ -231,59 +231,47 @@ export function renderTerminal(
     
     for (const row of [row1, row2].filter(r => r.length > 0)) {
       const n = row.length;
-      const cellW = 18; // wider cells for full info
+      const cellW = 20; // wider for icon+cond+temp inline
       
-      // Header
-      let top = "┌";
-      let mid = "├";
-      let bot = "└";
-      for (let i = 0; i < n; i++) {
-        top += "─".repeat(cellW) + (i === n-1 ? "┐" : "┬");
-        mid += "─".repeat(cellW) + (i === n-1 ? "┤" : "┼");
-        bot += "─".repeat(cellW) + (i === n-1 ? "┘" : "┴");
-      }
-      lines.push(top);
-      
-      // Time row
-      let timeRow = "│";
+      // Build each column as a vertical block: time, icon+cond+temp, wind, rain
+      const colBlocks: string[][] = [];
       for (const f of row) {
         const hour = new Date(f.time).getHours();
         const timeStr = `${hour.toString().padStart(2, "0")}:00`;
-        timeRow += padCell(` ${timeStr} `, cellW) + "│";
-      }
-      lines.push(timeRow);
-      
-      // Icon row
-      let iconRow = "│";
-      for (const f of row) {
-        const hour = new Date(f.time).getHours();
         const icon = getAsciiIcon(f.weather || 0, hour);
         const wIcon = getIcon(f.weather || 0, hour);
-        iconRow += padCell(` ${icon} ${wIcon.label} `, cellW) + "│";
+        
+        // Each column: 4 lines tall - icon+cond+temp on same line
+        colBlocks.push([
+          padCell(` ${timeStr} `, cellW),
+          padCell(` ${icon} ${wIcon.label} ${ansiTemp(f.temp)} `, cellW),
+          padCell(` ${formatWind(f.windSpeed, f.windDir)} `, cellW),
+          padCell(` R${f.rainProb}% H${f.humidity}% `, cellW),
+        ]);
       }
-      lines.push(iconRow);
       
-      // Temp row
-      let tempRow = "│";
-      for (const f of row) {
-        tempRow += padCell(` ${ansiTemp(f.temp)} `, cellW) + "│";
+      // Print column by column, line by line
+      // Top border
+      let top = "┌";
+      for (let i = 0; i < n; i++) {
+        top += "─".repeat(cellW) + (i === n-1 ? "┐" : "┬");
       }
-      lines.push(tempRow);
+      lines.push(top);
       
-      // Wind row
-      let windRow = "│";
-      for (const f of row) {
-        windRow += padCell(` ${formatWind(f.windSpeed, f.windDir)} `, cellW) + "│";
+      // 4 content lines (time, icon+cond+temp, wind, rain)
+      for (let lineIdx = 0; lineIdx < 4; lineIdx++) {
+        let line = "│";
+        for (let colIdx = 0; colIdx < n; colIdx++) {
+          line += colBlocks[colIdx][lineIdx] + "│";
+        }
+        lines.push(line);
       }
-      lines.push(windRow);
       
-      // Rain/Humidity row
-      let rainRow = "│";
-      for (const f of row) {
-        rainRow += padCell(` R${f.rainProb}% H${f.humidity}% `, cellW) + "│";
+      // Bottom border
+      let bot = "└";
+      for (let i = 0; i < n; i++) {
+        bot += "─".repeat(cellW) + (i === n-1 ? "┘" : "┴");
       }
-      lines.push(rainRow);
-      
       lines.push(bot);
     }
     lines.push("");
