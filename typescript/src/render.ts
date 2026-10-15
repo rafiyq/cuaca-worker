@@ -38,7 +38,7 @@ export interface Warning {
   geocode?: Record<string, string>;
 }
 
-// Weather code to multi-line ASCII art (3 lines tall, fixed 14-char width, no labels)
+// Weather code to multi-line ASCII art (3 lines, fixed 14-char width)
 const ASCII_ICONS: Record<number, { day: string[]; night: string[] }> = {
   0: {  // Cerah / Sunny
     day: ["     .--.     ", "    /    \\    ", "   '      '   "], 
@@ -266,7 +266,9 @@ export function renderTerminal(
       }
     }
     
-    const cellW = 28;
+    const ICON_W = 14;  // icon width
+    const DATA_W = 14;  // data width
+    const cellW = ICON_W + DATA_W; // 28 total
     const n = periodOrder.length;
     
     // Top border with day header
@@ -290,7 +292,7 @@ export function renderTerminal(
     }
     lines.push(sep);
     
-    // Build each column as 7 lines: icon(3) + temp + wind + cloud + rain
+    // Build each column: 5 rows, icon on LEFT of each row
     const colBlocks: string[][] = [];
     for (const p of periodOrder) {
       const f = periodData[p];
@@ -299,21 +301,17 @@ export function renderTerminal(
         const icon = getAsciiIcon(f.weather || 0, hour);
         const label = getIconLabel(f.weather || 0, hour);
         
-        // Line 0: icon + label
-        // Lines 1-2: just icon
+        // 5 data rows, icon on LEFT of each
+        const emptyIcon = " ".repeat(ICON_W);
         colBlocks.push([
-          padCell(` ${icon[0]} ${label} `, cellW),
-          padCell(` ${icon[1]} `, cellW),
-          padCell(` ${icon[2]} `, cellW),
-          padCell(` ${ansiTemp(f.temp)} `, cellW),
-          padCell(` ${formatWind(f.windSpeed, f.windDir)} `, cellW),
-          padCell(` ${f.cloudCover}% cloud `, cellW),
-          padCell(` R${f.rainProb}% H${f.humidity}% `, cellW),
+          padCell(` ${icon[0]} ` + ` ${label} `, cellW),
+          padCell(` ${icon[1]} ` + ` ${ansiTemp(f.temp)} `, cellW),
+          padCell(` ${icon[2]} ` + ` ${formatWind(f.windSpeed, f.windDir)} `, cellW),
+          padCell(` ${emptyIcon} ` + ` ${f.cloudCover}% cloud `, cellW),
+          padCell(` ${emptyIcon} ` + ` R${f.rainProb}% H${f.humidity}% `, cellW),
         ]);
       } else {
         colBlocks.push([
-          " ".repeat(cellW),
-          " ".repeat(cellW),
           " ".repeat(cellW),
           " ".repeat(cellW),
           " ".repeat(cellW),
@@ -323,8 +321,8 @@ export function renderTerminal(
       }
     }
     
-    // Print 7 content rows
-    for (let lineIdx = 0; lineIdx < 7; lineIdx++) {
+    // Print 5 content rows (icon on left of each)
+    for (let lineIdx = 0; lineIdx < 5; lineIdx++) {
       let line = "│";
       for (let colIdx = 0; colIdx < n; colIdx++) {
         line += colBlocks[colIdx][lineIdx] + "│";
