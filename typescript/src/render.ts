@@ -131,7 +131,6 @@ function ansiWidth(str: string): number {
 function padCell(content: string, width: number): string {
   const w = ansiWidth(content);
   if (w >= width) {
-    // Truncate preserving ANSI codes (simple approach)
     return content.slice(0, width + (content.length - w));
   }
   return content + " ".repeat(width - w);
@@ -212,7 +211,7 @@ export function renderTerminal(
     lines.push("");
   }
   
-  // 3-day forecast table - show actual hours from BMKG
+  // 3-day forecast table - 4 columns per row for readability
   let dayCount = 0;
   for (const [date, dayForecasts] of days) {
     if (dayCount >= 3) break;
@@ -221,48 +220,72 @@ export function renderTerminal(
     const dayName = new Date(date).toLocaleDateString("en-US", { weekday: "short", day: "numeric", month: "short" });
     lines.push(`${ANSI.bgBlue}${ANSI.white} ${dayName} ${ANSI.reset}`);
     
-    // Show all 3-hour slots for this day (up to 8)
-    const slots = dayForecasts.slice(0, 8);
+    // Sort by hour and take up to 8 slots (24 hours)
+    const slots = dayForecasts
+      .sort((a, b) => new Date(a.time).getHours() - new Date(b.time).getHours())
+      .slice(0, 8);
     
-    // Table header with actual hours
-    lines.push("┌──────┬──────┬──────┬──────┬──────┬──────┬──────┬──────┐");
+    // Split into two rows of 4 columns each
+    const row1 = slots.slice(0, 4);
+    const row2 = slots.slice(4, 8);
     
-    let timeRow = "│";
-    let iconRow = "│";
-    let tempRow = "│";
-    let windRow = "│";
-    let rainRow = "│";
-    
-    for (const f of slots) {
-      const hour = new Date(f.time).getHours();
-      const timeStr = `${hour.toString().padStart(2, "0")}:00`;
-      const icon = getAsciiIcon(f.weather || 0, hour);
-      const wIcon = getIcon(f.weather || 0, hour);
+    for (const row of [row1, row2].filter(r => r.length > 0)) {
+      const n = row.length;
+      const cellW = 18; // wider cells for full info
       
-      // Each cell: 6 chars wide (5 content + 1 space padding)
-      timeRow += padCell(` ${timeStr} `, 6) + "│";
-      iconRow += padCell(` ${icon} `, 6) + "│";
-      tempRow += padCell(` ${ansiTemp(f.temp)} `, 6) + "│";
-      windRow += padCell(` ${formatWind(f.windSpeed, f.windDir)} `, 6) + "│";
-      rainRow += padCell(` ${f.rainProb}% ${f.humidity}% `, 6) + "│";
+      // Header
+      let top = "┌";
+      let mid = "├";
+      let bot = "└";
+      for (let i = 0; i < n; i++) {
+        top += "─".repeat(cellW) + (i === n-1 ? "┐" : "┬");
+        mid += "─".repeat(cellW) + (i === n-1 ? "┤" : "┼");
+        bot += "─".repeat(cellW) + (i === n-1 ? "┘" : "┴");
+      }
+      lines.push(top);
+      
+      // Time row
+      let timeRow = "│";
+      for (const f of row) {
+        const hour = new Date(f.time).getHours();
+        const timeStr = `${hour.toString().padStart(2, "0")}:00`;
+        timeRow += padCell(` ${timeStr} `, cellW) + "│";
+      }
+      lines.push(timeRow);
+      
+      // Icon row
+      let iconRow = "│";
+      for (const f of row) {
+        const hour = new Date(f.time).getHours();
+        const icon = getAsciiIcon(f.weather || 0, hour);
+        const wIcon = getIcon(f.weather || 0, hour);
+        iconRow += padCell(` ${icon} ${wIcon.label} `, cellW) + "│";
+      }
+      lines.push(iconRow);
+      
+      // Temp row
+      let tempRow = "│";
+      for (const f of row) {
+        tempRow += padCell(` ${ansiTemp(f.temp)} `, cellW) + "│";
+      }
+      lines.push(tempRow);
+      
+      // Wind row
+      let windRow = "│";
+      for (const f of row) {
+        windRow += padCell(` ${formatWind(f.windSpeed, f.windDir)} `, cellW) + "│";
+      }
+      lines.push(windRow);
+      
+      // Rain/Humidity row
+      let rainRow = "│";
+      for (const f of row) {
+        rainRow += padCell(` R${f.rainProb}% H${f.humidity}% `, cellW) + "│";
+      }
+      lines.push(rainRow);
+      
+      lines.push(bot);
     }
-    
-    // Fill remaining empty cells if less than 8 slots
-    const remaining = 8 - slots.length;
-    for (let i = 0; i < remaining; i++) {
-      timeRow += " ".repeat(6) + "│";
-      iconRow += " ".repeat(6) + "│";
-      tempRow += " ".repeat(6) + "│";
-      windRow += " ".repeat(6) + "│";
-      rainRow += " ".repeat(6) + "│";
-    }
-    
-    lines.push(timeRow);
-    lines.push(iconRow);
-    lines.push(tempRow);
-    lines.push(windRow);
-    lines.push(rainRow);
-    lines.push("└──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┘");
     lines.push("");
   }
   
