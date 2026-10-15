@@ -38,58 +38,75 @@ export interface Warning {
   geocode?: Record<string, string>;
 }
 
-// Weather code to ASCII art mapping (BMKG weather codes)
-const WEATHER_ICONS: Record<number, { day: string; night: string; label: string }> = {
-  0: { day: "☀️", night: "🌙", label: "Cerah" },
-  1: { day: "🌤️", night: "🌙☁️", label: "Cerah Berawan" },
-  2: { day: "⛅", night: "☁️🌙", label: "Berawan" },
-  3: { day: "☁️", night: "☁️", label: "Berawan" },
-  4: { day: "☁️", night: "☁️", label: "Berawan Tebal" },
-  5: { day: "🌫️", night: "🌫️", label: "Kabut" },
-  10: { day: "🌦️", night: "🌧️🌙", label: "Hujan Ringan" },
-  11: { day: "🌧️", night: "🌧️", label: "Hujan" },
-  12: { day: "⛈️", night: "⛈️", label: "Hujan Lebat" },
-  13: { day: "⛈️", night: "⛈️", label: "Hujan Petir" },
-  14: { day: "⛈️", night: "⛈️", label: "Hujan Petir Lebat" },
-  20: { day: "🌨️", night: "🌨️", label: "Salju Ringan" },
-  21: { day: "❄️", night: "❄️", label: "Salju" },
-  22: { day: "❄️", night: "❄️", label: "Salju Lebat" },
-  30: { day: "🌪️", night: "🌪️", label: "Angin Kencang" },
-  40: { day: "🌫️", night: "🌫️", label: "Kabut Asap" },
-  50: { day: "🌫️", night: "🌫️", label: "Kabut" },
-  60: { day: "💧", night: "💧", label: "Hujan Beku" },
-  61: { day: "💧", night: "💧", label: "Hujan Beku Lebat" },
-  63: { day: "🌨️", night: "🌨️", label: "Salju Berbatu" },
-  80: { day: "🌦️", night: "🌧️🌙", label: "Hujan Lokal" },
-  95: { day: "🌪️", night: "🌪️", label: "Badai" },
-  99: { day: "🌪️", night: "🌪️", label: "Badai Ekstrem" },
+// Weather code to multi-line ASCII art (3 lines tall like wttr.in) - wider for visibility
+const ASCII_ICONS: Record<number, { day: string[]; night: string[]; label: string }> = {
+  0: {  // Cerah / Sunny
+    day: ["     .--.     ", "    /    \\    ", "   '      '   "], 
+    night: ["     `--'     ", "    \\    /    ", "   '      '   "], 
+    label: "Cerah" 
+  },
+  1: {  // Cerah Berawan / Partly cloudy
+    day: ["     .--.     ", "   .'  '.    ", "  '      '   "], 
+    night: ["     `--'     ", "   .'  '.    ", "  '      '   "], 
+    label: "Cerah Berawan" 
+  },
+  2: {  // Berawan / Cloudy
+    day: ["    .--.      ", "   /    \\     ", "  '      '   "], 
+    night: ["    .--.      ", "   /    \\     ", "  '      '   "], 
+    label: "Berawan" 
+  },
+  3: {  // Berawan / Overcast
+    day: ["    .--.      ", "   /    \\     ", "  '      '   "], 
+    night: ["    .--.      ", "   /    \\     ", "  '      '   "], 
+    label: "Berawan" 
+  },
+  4: {  // Berawan Tebal / Overcast
+    day: ["    .--.      ", "   /    \\     ", "  '      '   "], 
+    night: ["    .--.      ", "   /    \\     ", "  '      '   "], 
+    label: "Berawan Tebal" 
+  },
+  5: {  // Kabut / Fog
+    day: ["   _ - _ - _  ", "  _ - _ - _  ", "   _ - _ - _  "], 
+    night: ["   _ - _ - _  ", "  _ - _ - _  ", "   _ - _ - _  "], 
+    label: "Kabut" 
+  },
+  10: {  // Hujan Ringan / Light rain
+    day: ["     .--.     ", "  .'    '.    ", " '  |  | '  "], 
+    night: ["     `--'     ", "  .'    '.    ", " '  |  | '  "], 
+    label: "Hujan Ringan" 
+  },
+  11: {  // Hujan / Rain
+    day: ["     .--.     ", "  .'    '.    ", " '  |  | '  "], 
+    night: ["     `--'     ", "  .'    '.    ", " '  |  | '  "], 
+    label: "Hujan" 
+  },
+  12: {  // Hujan Lebat / Heavy rain
+    day: ["     .--.     ", "  .'    '.    ", " '  || || '  "], 
+    night: ["     `--'     ", "  .'    '.    ", " '  || || '  "], 
+    label: "Hujan Lebat" 
+  },
+  13: {  // Hujan Petir / Thunderstorm
+    day: ["     .--.     ", "  .' /\\ '.    ", " '  /  \\ '  "], 
+    night: ["     `--'     ", "  .' /\\ '.    ", " '  /  \\ '  "], 
+    label: "Hujan Petir" 
+  },
+  14: {  // Hujan Petir Lebat / Heavy thunderstorm
+    day: ["     .--.     ", "  .' /\\ '.    ", " '  /  \\ '  "], 
+    night: ["     `--'     ", "  .' /\\ '.    ", " '  /  \\ '  "], 
+    label: "Hujan Petir Lebat" 
+  },
 };
 
-// Simple ASCII art for terminal (no emoji fallback)
-const ASCII_ICONS: Record<number, { day: string; night: string }> = {
-  0: { day: ".-.", night: "`-'" },           // Sunny
-  1: { day: ".-.", night: "`-'" },           // Clear night
-  2: { day: ".--.", night: ".--." },         // Partly cloudy
-  3: { day: ".--.", night: ".--." },         // Cloudy
-  4: { day: ".--.", night: ".--." },         // Overcast
-  5: { day: "(_)", night: "(_)" },           // Fog
-  10: { day: ".-.", night: "`-'" },          // Light rain
-  11: { day: ".-.", night: "`-'" },          // Rain
-  12: { day: ".-.", night: "`-'" },          // Heavy rain
-  13: { day: ".-.", night: "`-'" },          // Thunderstorm
-  14: { day: ".-.", night: "`-'" },          // Heavy thunderstorm
-};
-
-function getIcon(weatherCode: number, hour: number): { day: string; night: string; label: string } {
-  const isDay = hour >= 6 && hour < 18;
-  const icon = WEATHER_ICONS[weatherCode] || WEATHER_ICONS[0];
-  return icon;
-}
-
-function getAsciiIcon(weatherCode: number, hour: number): string {
+function getAsciiIcon(weatherCode: number, hour: number): string[] {
   const isDay = hour >= 6 && hour < 18;
   const icon = ASCII_ICONS[weatherCode] || ASCII_ICONS[0];
   return isDay ? icon.day : icon.night;
+}
+
+function getIconLabel(weatherCode: number, hour: number): string {
+  const isDay = hour >= 6 && hour < 18;
+  const icon = ASCII_ICONS[weatherCode] || ASCII_ICONS[0];
+  return icon.label;
 }
 
 // Wind direction to arrow
@@ -120,6 +137,13 @@ function groupByDay(forecast: SimpleForecast[]): Map<string, SimpleForecast[]> {
     days.get(date)!.push(f);
   }
   return days;
+}
+
+function getPeriodKey(hour: number): "Morning" | "Noon" | "Evening" | "Night" {
+  if (hour >= 5 && hour < 11) return "Morning";
+  if (hour >= 11 && hour < 17) return "Noon";
+  if (hour >= 17 && hour < 23) return "Evening";
+  return "Night";
 }
 
 // ANSI-aware string width (ignores escape codes)
@@ -188,8 +212,9 @@ export function renderTerminal(
   // Current conditions (first forecast item)
   const current = forecast[0];
   const currentHour = new Date(current.time).getHours();
+  const currentIcon = getAsciiIcon(current.weather || 0, currentHour);
   
-  lines.push(`     ${getAsciiIcon(current.weather || 0, currentHour)}       ${current.condition}`);
+  lines.push(`     ${currentIcon[0]}       ${current.condition}`);
   lines.push(`      __)      ${ansiTemp(current.temp)}`);
   lines.push(`     (         ${formatWind(current.windSpeed, current.windDir)}`);
   lines.push(`      \`-’      ${current.humidity}% humidity`);
@@ -211,69 +236,104 @@ export function renderTerminal(
     lines.push("");
   }
   
-  // 3-day forecast table - icon inline with temp
+  // 3-day forecast table - wttr.in style with period headers
   let dayCount = 0;
   for (const [date, dayForecasts] of days) {
     if (dayCount >= 3) break;
     dayCount++;
     
-    const dayName = new Date(date).toLocaleDateString("en-US", { weekday: "short", day: "numeric", month: "short" });
+    const dayName = new Date(date).toLocaleDateString("en-US", { weekday: "short", day: "2-digit", month: "short" });
     lines.push(`${ANSI.bgBlue}${ANSI.white} ${dayName} ${ANSI.reset}`);
     
-    // Sort by hour and take up to 8 slots
-    const slots = dayForecasts
-      .sort((a, b) => new Date(a.time).getHours() - new Date(b.time).getHours())
-      .slice(0, 8);
+    // Group forecasts by period
+    const periods = new Map<string, SimpleForecast[]>();
+    for (const f of dayForecasts) {
+      const hour = new Date(f.time).getHours();
+      const period = getPeriodKey(hour);
+      if (!periods.has(period)) periods.set(period, []);
+      periods.get(period)!.push(f);
+    }
     
-    // Split into two rows of 4 columns each
-    const row1 = slots.slice(0, 4);
-    const row2 = slots.slice(4, 8);
+    // Use first forecast of each period (most representative)
+    const periodOrder = ["Morning", "Noon", "Evening", "Night"];
+    const periodData: Record<string, SimpleForecast> = {};
+    for (const p of periodOrder) {
+      const arr = periods.get(p);
+      if (arr && arr.length > 0) {
+        periodData[p] = arr[0];
+      }
+    }
     
-    for (const row of [row1, row2].filter(r => r.length > 0)) {
-      const n = row.length;
-      const cellW = 20; // wider for icon+cond+temp inline
-      
-      // Build each column as a vertical block: time, icon+cond+temp, wind, rain
-      const colBlocks: string[][] = [];
-      for (const f of row) {
+    const cellW = 28;
+    const n = periodOrder.length;
+    
+    // Top border with day header
+    let top = "┌";
+    for (let i = 0; i < n; i++) {
+      top += "─".repeat(cellW) + (i === n-1 ? "┐" : "┬");
+    }
+    lines.push(top);
+    
+    // Period headers
+    let headerRow = "│";
+    for (const p of periodOrder) {
+      headerRow += padCell(` ${p} `, cellW) + "│";
+    }
+    lines.push(headerRow);
+    
+    // Separator
+    let sep = "├";
+    for (let i = 0; i < n; i++) {
+      sep += "─".repeat(cellW) + (i === n-1 ? "┤" : "┼");
+    }
+    lines.push(sep);
+    
+    // Build each column as 7 lines: icon(3) + temp + wind + cloud + rain
+    const colBlocks: string[][] = [];
+    for (const p of periodOrder) {
+      const f = periodData[p];
+      if (f) {
         const hour = new Date(f.time).getHours();
-        const timeStr = `${hour.toString().padStart(2, "0")}:00`;
         const icon = getAsciiIcon(f.weather || 0, hour);
-        const wIcon = getIcon(f.weather || 0, hour);
+        const label = getIconLabel(f.weather || 0, hour);
         
-        // Each column: 4 lines tall - icon+cond+temp on same line
         colBlocks.push([
-          padCell(` ${timeStr} `, cellW),
-          padCell(` ${icon} ${wIcon.label} ${ansiTemp(f.temp)} `, cellW),
+          padCell(` ${icon[0]} ${label} `, cellW),
+          padCell(` ${icon[1]} `, cellW),
+          padCell(` ${icon[2]} `, cellW),
+          padCell(` ${ansiTemp(f.temp)} `, cellW),
           padCell(` ${formatWind(f.windSpeed, f.windDir)} `, cellW),
+          padCell(` ${f.cloudCover}% cloud `, cellW),
           padCell(` R${f.rainProb}% H${f.humidity}% `, cellW),
         ]);
+      } else {
+        colBlocks.push([
+          " ".repeat(cellW),
+          " ".repeat(cellW),
+          " ".repeat(cellW),
+          " ".repeat(cellW),
+          " ".repeat(cellW),
+          " ".repeat(cellW),
+          " ".repeat(cellW),
+        ]);
       }
-      
-      // Print column by column, line by line
-      // Top border
-      let top = "┌";
-      for (let i = 0; i < n; i++) {
-        top += "─".repeat(cellW) + (i === n-1 ? "┐" : "┬");
-      }
-      lines.push(top);
-      
-      // 4 content lines (time, icon+cond+temp, wind, rain)
-      for (let lineIdx = 0; lineIdx < 4; lineIdx++) {
-        let line = "│";
-        for (let colIdx = 0; colIdx < n; colIdx++) {
-          line += colBlocks[colIdx][lineIdx] + "│";
-        }
-        lines.push(line);
-      }
-      
-      // Bottom border
-      let bot = "└";
-      for (let i = 0; i < n; i++) {
-        bot += "─".repeat(cellW) + (i === n-1 ? "┘" : "┴");
-      }
-      lines.push(bot);
     }
+    
+    // Print 7 content rows
+    for (let lineIdx = 0; lineIdx < 7; lineIdx++) {
+      let line = "│";
+      for (let colIdx = 0; colIdx < n; colIdx++) {
+        line += colBlocks[colIdx][lineIdx] + "│";
+      }
+      lines.push(line);
+    }
+    
+    // Bottom border
+    let bot = "└";
+    for (let i = 0; i < n; i++) {
+      bot += "─".repeat(cellW) + (i === n-1 ? "┘" : "┴");
+    }
+    lines.push(bot);
     lines.push("");
   }
   
