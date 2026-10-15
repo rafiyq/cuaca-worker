@@ -4,5 +4,6 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-10-13",
   "compatibility_flags": ["nodejs_compat"],
-  "assets": { "binding": "ASSETS", "directory": "./public" }
+  "assets": { "binding": "ASSETS", "directory": "./public" },
+  "ai": { "binding": "AI" }
 }
