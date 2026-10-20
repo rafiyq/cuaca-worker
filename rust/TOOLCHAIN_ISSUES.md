@@ -108,3 +108,40 @@ Need to either:
 2. **Short-term**: Test worker@0.10 with wrangler native build
 3. **Medium-term**: File issues upstream if bugs confirmed
 4. **Fallback**: Manual JS glue if toolchain doesn't mature
+## Latest Attempt: wasm-pack build
+
+### Build Success ✅
+- `wasm-pack build --target web --out-dir dist/wasm --no-opt` works
+- `cargo build --target wasm32-unknown-unknown --release` works
+
+### Runtime Failure ❌
+```
+Uncaught TypeError: Cannot read properties of undefined (reading 'method')
+```
+The wasm-pack generated glue code (target web) expects browser-like Request/Response objects with `.method` property, but Cloudflare Workers provides different implementations.
+
+### Root Cause Analysis
+| Tool | Build | Runtime |
+|------|-------|---------|
+| worker-build | ❌ externref required | Would work (matches CF types) |
+| wasm-pack (web) | ✅ | ❌ glue code mismatch |
+| wasm-pack (bundler) | ✅ | ❌ fetch not a function |
+| wasm-pack (no-modules) | ✅ | ❌ init not a function |
+
+### The Core Conflict
+- **worker crate 0.8** expects wasm-bindgen output matching Cloudflare Workers' `Request`/`Response`/`Env` types
+- **worker-build** uses wasm-bindgen with `--force-enable-abort-handler` → requires `externref` → fails
+- **wasm-pack** generates browser-compatible glue code → doesn't match CF Workers' `Request`/`Response` types
+
+### Possible Solutions (Future)
+1. **Fork worker-build** - Remove `--force-enable-abort-handler` flag
+2. **Use wasm-bindgen 0.2.99** - Before abort handler flag
+3. **Manual wasm-bindgen** - Custom flags without abort handler
+4. **Wait for toolchain maturation** - worker 0.10+ with wrangler native support
+5. **Use wrangler's native Rust support** (wrangler 3.80+)
+
+### Current Status
+- ✅ TypeScript version: Production ready (cuaca-worker-ts/)
+- ✅ Rust business logic: Complete and compiles
+- ⚠️ Toolchain: Blocked on wasm-bindgen externref issue
+- 📋 Recommendation: Deploy TypeScript version, track Rust toolchain
