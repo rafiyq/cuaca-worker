@@ -1,35 +1,6 @@
-# Dependencies
 node_modules/
-
-# Build outputs
-dist/
-build/
-
-# Wrangler
 .wrangler/
-*.tfstate
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
+dist/
 *.log
-npm-debug.log*
-
-# Test
-coverage/
-
-# Environment
 .env
 .env.local
-.env.*.local
-
-# TypeScript
-*.tsbuildinfo
