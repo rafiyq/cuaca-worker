@@ -1,5 +1,6 @@
 use worker::*;
 use serde_json;
+use http::StatusCode;
 
 use cuaca::model::{Forecast as CuacaForecast, Location as CuacaLocation, Slot as CuacaSlot, SlotGroup};
 use cuaca::terminal::render as render_terminal;
@@ -13,195 +14,109 @@ mod wilayah;
 use bmkg::{fetch_forecast, fetch_warnings, BmkgForecast, BmkgWarning};
 use wilayah::{search_wilayah, nearest_wilayah, locate_wilayah};
 
+fn header_to_string(headers: &Headers, key: &str) -> String {
+    headers.get(key)
+        .ok()
+        .and_then(|v| v)
+        .unwrap_or_else(|| String::new())
+}
+
+fn header_to_parsed<T: std::str::FromStr>(headers: &Headers, key: &str) -> Option<T> {
+    headers.get(key)
+        .ok()
+        .and_then(|v| v)
+        .and_then(|v| v.parse().ok())
+}
+
 #[event(fetch)]
-async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
+async fn fetch(req: Request, env: Env, _ctx: Context) -> Result<Response> {
     console_error_panic_hook::set_once();
     
     let url = req.url()?;
     let path_str = url.path();
     
-    let cors_headers = |mut resp: Response| -> Result<Response> {
-        let mut headers = Headers::new();
-        headers.set("Access-Control-Allow-Origin", "*")?;
-        headers.set("Access-Control-Allow-Methods", "GET, OPTIONS")?;
-        headers.set("Access-Control-Allow-Headers", "Content-Type")?;
-        let resp_headers = resp.headers_mut();
-        resp_headers.set("Access-Control-Allow-Origin", "*")?;
-        resp_headers.set("Access-Control-Allow-Methods", "GET, OPTIONS")?;
-        resp_headers.set("Access-Control-Allow-Headers", "Content-Type")?;
-        Ok(resp)
-    };
-
+    // Handle CORS preflight
     if req.method() == Method::Options {
         return cors_headers(Response::ok("")?);
     }
 
     // GET /api/forecast?adm4=...
     if path_str == "/api/forecast" {
-        let adm4 = req.url()?.query_pairs().find(|(k, _)| k == "adm4").map(|(_, v)| v.to_string());
+        let adm4 = url.query_pairs().find(|(k, _)| k == "adm4").map(|(_, v)| v.to_string());
         let adm4 = match adm4 {
             Some(a) => a,
-            None => return json_error("adm4 parameter required", 400),
+            None => return json_error("adm4 parameter required", StatusCode::BAD_REQUEST),
         };
         
         match fetch_forecast(&adm4).await {
-            Ok(data) => return cors_headers(Response::from_json(&data)?),
-            Err(e) => return json_error(&format!("Failed to fetch forecast: {}", e), 502),
+            Ok(data) => return cors_json_response(data),
+            Err(e) => return json_error(&format!("Failed to fetch forecast: {}", e), StatusCode::BAD_GATEWAY),
         }
     }
 
     // GET /api/warnings?adm4=...
     if path_str == "/api/warnings" {
-        let adm4 = req.url()?.query_pairs().find(|(k, _)| k == "adm4").map(|(_, v)| v.to_string());
+        let adm4 = url.query_pairs().find(|(k, _)| k == "adm4").map(|(_, v)| v.to_string());
         let adm4 = match adm4 {
             Some(a) => a,
-            None => return json_error("adm4 parameter required", 400),
+            None => return json_error("adm4 parameter required", StatusCode::BAD_REQUEST),
         };
         
         match fetch_warnings(&adm4).await {
-            Ok(warnings) => return cors_headers(Response::from_json(&serde_json::json!({ "adm4": adm4, "warnings": warnings }))?),
-            Err(e) => return json_error(&format!("Failed to fetch warnings: {}", e), 502),
+            Ok(warnings) => return cors_json_response(serde_json::json!({ "adm4": adm4, "warnings": warnings })),
+            Err(e) => return json_error(&format!("Failed to fetch warnings: {}", e), StatusCode::BAD_GATEWAY),
         }
     }
 
     // GET /api/resolve?q=jakarta&limit=5
     if path_str == "/api/resolve" {
-        let q = req.url()?.query_pairs().find(|(k, _)| k == "q").map(|(_, v)| v.to_string());
+        let q = url.query_pairs().find(|(k, _)| k == "q").map(|(_, v)| v.to_string());
         let q = match q {
             Some(q) => q,
-            None => return json_error("q parameter required", 400),
+            None => return json_error("q parameter required", StatusCode::BAD_REQUEST),
         };
-        let limit = req.url()?.query_pairs()
+        let limit = url.query_pairs()
             .find(|(k, _)| k == "limit")
             .and_then(|(_, v)| v.parse().ok())
             .unwrap_or(10);
         
         match search_wilayah(&q, limit).await {
-            Ok(results) => return cors_headers(Response::from_json(&serde_json::json!({ "query": q, "results": results }))?),
-            Err(e) => return json_error(&format!("Failed to search: {}", e), 502),
+            Ok(results) => return cors_json_response(serde_json::json!({ "query": q, "results": results })),
+            Err(e) => return json_error(&format!("Failed to search: {}", e), StatusCode::BAD_GATEWAY),
         }
     }
 
     // GET /api/nearest?lat=&lon=&limit=1
     if path_str == "/api/nearest" {
-        let lat = req.url()?.query_pairs().find(|(k, _)| k == "lat").and_then(|(_, v)| v.parse().ok());
-        let lon = req.url()?.query_pairs().find(|(k, _)| k == "lon").and_then(|(_, v)| v.parse().ok());
+        let lat = url.query_pairs().find(|(k, _)| k == "lat").and_then(|(_, v)| v.parse().ok());
+        let lon = url.query_pairs().find(|(k, _)| k == "lon").and_then(|(_, v)| v.parse().ok());
         let (lat, lon) = match (lat, lon) {
             (Some(lat), Some(lon)) => (lat, lon),
-            _ => return json_error("lat and lon parameters required", 400),
+            _ => return json_error("lat and lon parameters required", StatusCode::BAD_REQUEST),
         };
-        let limit = req.url()?.query_pairs()
+        let limit = url.query_pairs()
             .find(|(k, _)| k == "limit")
             .and_then(|(_, v)| v.parse().ok())
             .unwrap_or(1);
         
         match nearest_wilayah(lat, lon, limit).await {
-            Ok(results) => return cors_headers(Response::from_json(&serde_json::json!({ "lat": lat, "lon": lon, "results": results }))?),
-            Err(e) => return json_error(&format!("Failed to reverse geocode: {}", e), 502),
+            Ok(results) => return cors_json_response(serde_json::json!({ "lat": lat, "lon": lon, "results": results })),
+            Err(e) => return json_error(&format!("Failed to reverse geocode: {}", e), StatusCode::BAD_GATEWAY),
         }
     }
 
     // GET /api/locate?lat=&lon=
     if path_str == "/api/locate" {
-        let lat = req.url()?.query_pairs().find(|(k, _)| k == "lat").and_then(|(_, v)| v.parse().ok());
-        let lon = req.url()?.query_pairs().find(|(k, _)| k == "lon").and_then(|(_, v)| v.parse().ok());
+        let lat = url.query_pairs().find(|(k, _)| k == "lat").and_then(|(_, v)| v.parse().ok());
+        let lon = url.query_pairs().find(|(k, _)| k == "lon").and_then(|(_, v)| v.parse().ok());
         let (lat, lon) = match (lat, lon) {
             (Some(lat), Some(lon)) => (lat, lon),
-            _ => return json_error("lat and lon parameters required", 400),
+            _ => return json_error("lat and lon parameters required", StatusCode::BAD_REQUEST),
         };
         
         match locate_wilayah(lat, lon).await {
-            Ok(result) => return cors_headers(Response::from_json(&result)?),
-            Err(e) => return json_error(&format!("Failed to locate: {}", e), 502),
-        }
-    }
-
-    // GET /api/ai-report?adm4=...&style=brief|detailed|conversational
-    // AI reports disabled - requires AI binding
-    // if path_str == "/api/ai-report" { ... }
-
-    // GET / - Terminal weather (auto GeoIP)
-    if path_str == "/" || path_str == "/weather" {
-        let adm4 = resolve_adm4_from_request(&req, &req.url()?).await.unwrap_or_else(|| "31.71.03.1001".to_string());
-        
-        let forecast = match fetch_forecast(&adm4).await {
-            Ok(f) => f,
-            Err(e) => return cors_headers(Response::error(&format!("Error: {}", e), 502)?),
-        };
-        let warnings = match fetch_warnings(&adm4).await {
-            Ok(w) => w,
-            Err(e) => return cors_headers(Response::error(&format!("Error: {}", e), 502)?),
-        };
-        
-        let format = req.url()?.query_pairs().find(|(k, _)| k == "format").map(|(_, v)| v.to_string());
-        
-        if format.as_deref() == Some("3") || format.as_deref() == Some("short") {
-            let cuaca_forecast = convert_forecast(&forecast);
-            let current = cuaca_forecast.first_slot();
-            let icon = match current {
-                Some(s) => cuaca::icons::ascii_icon(s.weather),
-                None => cuaca::icons::ascii_icon(0),
-            };
-            let text = format!("{}: {} {}", get_location_name(&cuaca_forecast), icon[0], format_temp(current.map(|s| s.t).unwrap_or(0)));
-            return cors_headers(Response::ok(text)?);
-        }
-        
-        let accept_header = req.headers().get("Accept").unwrap_or_else(|_| Some(String::new())).unwrap_or_default();
-        let accepts_html = accept_header.contains("text/html");
-        
-        let cuaca_forecast = convert_forecast(&forecast);
-        let cuaca_warnings = convert_warnings(&warnings);
-        
-        if accepts_html {
-            let html = render_html_cuaca(&cuaca_forecast);
-            return cors_headers(Response::from_html(html)?);
-        } else {
-            let text = render_terminal(&Config::default(), &cuaca_forecast, &cuaca_warnings);
-            return cors_headers(Response::ok(text)?);
-        }
-    }
-
-    // GET /:location
-    let url2 = req.url()?;
-    let path_str2 = url2.path();
-    if path_str2.len() > 1 && !path_str2.starts_with("/api") {
-        let location_name = &path_str2[1..];
-        let adm4 = resolve_location(location_name).await.unwrap_or_else(|| "31.71.03.1001".to_string());
-        
-        let forecast = match fetch_forecast(&adm4).await {
-            Ok(f) => f,
-            Err(e) => return cors_headers(Response::error(&format!("Error: {}", e), 502)?),
-        };
-        let warnings = match fetch_warnings(&adm4).await {
-            Ok(w) => w,
-            Err(e) => return cors_headers(Response::error(&format!("Error: {}", e), 502)?),
-        };
-        
-        let format = req.url()?.query_pairs().find(|(k, _)| k == "format").map(|(_, v)| v.to_string());
-        
-        if format.as_deref() == Some("3") || format.as_deref() == Some("short") {
-            let cuaca_forecast = convert_forecast(&forecast);
-            let current = cuaca_forecast.first_slot();
-            let icon = match current {
-                Some(s) => cuaca::icons::ascii_icon(s.weather),
-                None => cuaca::icons::ascii_icon(0),
-            };
-            let text = format!("{}: {} {}", get_location_name(&cuaca_forecast), icon[0], format_temp(current.map(|s| s.t).unwrap_or(0)));
-            return cors_headers(Response::ok(text)?);
-        }
-        
-        let accept_header = req.headers().get("Accept").unwrap_or_else(|_| Some(String::new())).unwrap_or_default();
-        let accepts_html = accept_header.contains("text/html");
-        
-        let cuaca_forecast = convert_forecast(&forecast);
-        let cuaca_warnings = convert_warnings(&warnings);
-        
-        if accepts_html {
-            let html = render_html_cuaca(&cuaca_forecast);
-            return cors_headers(Response::from_html(html)?);
-        } else {
-            let text = render_terminal(&Config::default(), &cuaca_forecast, &cuaca_warnings);
-            return cors_headers(Response::ok(text)?);
+            Ok(result) => return cors_json_response(result),
+            Err(e) => return json_error(&format!("Failed to locate: {}", e), StatusCode::BAD_GATEWAY),
         }
     }
 
@@ -214,10 +129,95 @@ async fn main(req: Request, env: Env, _ctx: Context) -> Result<Response> {
             serde_json::json!({ "adm4": "33.74.07.1001", "name": "Semarang Tengah, Semarang" }),
             serde_json::json!({ "adm4": "35.78.03.1001", "name": "Tegalsari, Surabaya" }),
         ];
-        return cors_headers(Response::from_json(&serde_json::json!({ "examples": examples }))?);
+        return cors_json_response(serde_json::json!({ "examples": examples }));
     }
 
-    json_error("Not found", 404)
+    // GET / - Terminal weather (auto GeoIP)
+    if path_str == "/" || path_str == "/weather" {
+        let adm4 = resolve_adm4_from_request(&req, &url).await.unwrap_or_else(|| "31.71.03.1001".to_string());
+        
+        let forecast = match fetch_forecast(&adm4).await {
+            Ok(f) => f,
+            Err(e) => return cors_text_response(&format!("Error: {}", e), StatusCode::BAD_GATEWAY),
+        };
+        let warnings = match fetch_warnings(&adm4).await {
+            Ok(w) => w,
+            Err(e) => return cors_text_response(&format!("Error: {}", e), StatusCode::BAD_GATEWAY),
+        };
+        
+        let format = url.query_pairs().find(|(k, _)| k == "format").map(|(_, v)| v.to_string());
+        
+        if format.as_deref() == Some("3") || format.as_deref() == Some("short") {
+            let cuaca_forecast = convert_forecast(&forecast);
+            let current = cuaca_forecast.first_slot();
+            let icon = match current {
+                Some(s) => cuaca::icons::ascii_icon(s.weather),
+                None => cuaca::icons::ascii_icon(0),
+            };
+            let text = format!("{}: {} {}", get_location_name(&cuaca_forecast), icon[0], format_temp(current.map(|s| s.t).unwrap_or(0)));
+            return cors_text_response(&text, StatusCode::OK);
+        }
+        
+        let accept_header = header_to_string(&req.headers(), "Accept");
+        let accepts_html = accept_header.contains("text/html");
+        
+        let cuaca_forecast = convert_forecast(&forecast);
+        let cuaca_warnings = convert_warnings(&warnings);
+        
+        if accepts_html {
+            let html = render_html_cuaca(&cuaca_forecast);
+            return cors_html_response(html);
+        } else {
+            let text = render_terminal(&Config::default(), &cuaca_forecast, &cuaca_warnings);
+            return cors_text_response(&text, StatusCode::OK);
+        }
+    }
+
+    // GET /:location
+    let url2 = req.url()?;
+    let path_str2 = url2.path();
+    if path_str2.len() > 1 && !path_str2.starts_with("/api") {
+        let location_name = &path_str2[1..];
+        let adm4 = resolve_location(location_name).await.unwrap_or_else(|| "31.71.03.1001".to_string());
+        
+        let forecast = match fetch_forecast(&adm4).await {
+            Ok(f) => f,
+            Err(e) => return cors_text_response(&format!("Error: {}", e), StatusCode::BAD_GATEWAY),
+        };
+        let warnings = match fetch_warnings(&adm4).await {
+            Ok(w) => w,
+            Err(e) => return cors_text_response(&format!("Error: {}", e), StatusCode::BAD_GATEWAY),
+        };
+        
+        let format = url2.query_pairs().find(|(k, _)| k == "format").map(|(_, v)| v.to_string());
+        
+        if format.as_deref() == Some("3") || format.as_deref() == Some("short") {
+            let cuaca_forecast = convert_forecast(&forecast);
+            let current = cuaca_forecast.first_slot();
+            let icon = match current {
+                Some(s) => cuaca::icons::ascii_icon(s.weather),
+                None => cuaca::icons::ascii_icon(0),
+            };
+            let text = format!("{}: {} {}", get_location_name(&cuaca_forecast), icon[0], format_temp(current.map(|s| s.t).unwrap_or(0)));
+            return cors_text_response(&text, StatusCode::OK);
+        }
+        
+        let accept_header = header_to_string(&req.headers(), "Accept");
+        let accepts_html = accept_header.contains("text/html");
+        
+        let cuaca_forecast = convert_forecast(&forecast);
+        let cuaca_warnings = convert_warnings(&warnings);
+        
+        if accepts_html {
+            let html = render_html_cuaca(&cuaca_forecast);
+            return cors_html_response(html);
+        } else {
+            let text = render_terminal(&Config::default(), &cuaca_forecast, &cuaca_warnings);
+            return cors_text_response(&text, StatusCode::OK);
+        }
+    }
+
+    json_error("Not found", StatusCode::NOT_FOUND)
 }
 
 fn cors_headers(mut resp: Response) -> Result<Response> {
@@ -232,12 +232,27 @@ fn cors_headers(mut resp: Response) -> Result<Response> {
     Ok(resp)
 }
 
-fn json_error(msg: &str, status: u16) -> Result<Response> {
-    let resp = Response::error(msg, status)?;
-    let mut headers = Headers::new();
-    headers.set("Access-Control-Allow-Origin", "*")?;
-    headers.set("Content-Type", "application/json")?;
-    Ok(resp.with_headers(headers))
+fn cors_json_response<T: serde::Serialize>(data: T) -> Result<Response> {
+    cors_headers(Response::from_json(&data)?)
+}
+
+fn cors_text_response(text: &str, status: StatusCode) -> Result<Response> {
+    let mut resp = Response::ok(text)?;
+    resp = resp.with_status(status.as_u16());
+    cors_headers(resp)
+}
+
+fn cors_html_response(html: String) -> Result<Response> {
+    let mut resp = Response::ok(html)?;
+    resp.headers_mut().set("Content-Type", "text/html; charset=utf-8")?;
+    cors_headers(resp)
+}
+
+fn json_error(msg: &str, status: StatusCode) -> Result<Response> {
+    let body = serde_json::to_string(&serde_json::json!({ "error": msg })).unwrap();
+    let mut resp = Response::ok(body)?;
+    resp = resp.with_status(status.as_u16());
+    cors_headers(resp)
 }
 
 async fn resolve_adm4_from_request(req: &Request, url: &Url) -> Option<String> {
@@ -254,10 +269,9 @@ async fn resolve_adm4_from_request(req: &Request, url: &Url) -> Option<String> {
             }
         }
     }
-    if let (Some(lat), Some(lon)) = (
-        req.headers().get("CF-IPLatitude").ok().and_then(|v| v?.parse().ok()),
-        req.headers().get("CF-IPLongitude").ok().and_then(|v| v?.parse().ok()),
-    ) {
+    let lat = header_to_parsed::<f64>(req.headers(), "CF-IPLatitude");
+    let lon = header_to_parsed::<f64>(req.headers(), "CF-IPLongitude");
+    if let (Some(lat), Some(lon)) = (lat, lon) {
         if let Ok(results) = nearest_wilayah(lat, lon, 1).await {
             if let Some(first) = results.first() {
                 return Some(first.code.clone());

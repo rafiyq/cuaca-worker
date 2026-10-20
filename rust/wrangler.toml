@@ -3,12 +3,11 @@ main = "dist/worker.js"
 compatibility_date = "2025-10-13"
 compatibility_flags = ["nodejs_compat"]
 
+[build]
+command = "wasm-pack build --target web --out-dir dist/wasm --no-opt"
+
 [build.upload]
 format = "wasm"
 
 [vars]
 RUST_LOG = "info"
-
-[assets]
-directory = "dist/wasm"
-binding = "ASSETS"
