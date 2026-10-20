@@ -1,0 +1,10 @@
+target/
+build/
+.wrangler/
+dist/wasm/
+dist/worker.js
+node_modules/
+Cargo.lock
+*.log
+.env
+.env.local

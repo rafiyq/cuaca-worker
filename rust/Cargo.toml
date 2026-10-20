@@ -1,0 +1,33 @@
+[package]
+name = "cuaca-worker"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "z"
+strip = true
+panic = "abort"
+
+[dependencies]
+worker = { version = "0.4", features = ["http"] }
+cuaca = { version = "1.0", features = [] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+quick-xml = { version = "0.31", features = ["serialize"] }
+thiserror = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+regex = "1.10"
+urlencoding = "2.1"
+console_error_panic_hook = "0.1"
+serde-wasm-bindgen = "0.5"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+
+# Optional: AI reports (requires Workers AI binding)
+# ai = { version = "0.1", features = ["workers-ai"] }
