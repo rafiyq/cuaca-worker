@@ -8,3 +8,7 @@ format = "wasm"
 
 [vars]
 RUST_LOG = "info"
+
+[assets]
+directory = "dist/wasm"
+binding = "ASSETS"
