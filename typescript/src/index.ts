@@ -145,28 +145,9 @@ export default {
       }
     }
 
-    // GET /api/ai-report?adm4=...&style=brief|detailed|conversational - AI-generated weather report
+    // GET /api/ai-report?adm4=...&style=brief|detailed|conversational - AI-generated weather report (DISABLED)
     if (url.pathname === "/api/ai-report") {
-      const adm4 = url.searchParams.get("adm4");
-      const style = url.searchParams.get("style") || "brief"; // brief, detailed, conversational
-      if (!adm4) {
-        return json({ error: "adm4 parameter required" }, 400, corsHeaders);
-      }
-      if (!env.AI) {
-        return json({ error: "Workers AI not configured" }, 503, corsHeaders);
-      }
-      try {
-        const [data, warnings] = await Promise.all([
-          fetchForecast(adm4),
-          fetchWarnings(adm4).catch(() => []),
-        ]);
-        const report = await generateAIReport(env.AI, data, warnings, style);
-        return new Response(report, {
-          headers: { "Content-Type": "text/plain; charset=utf-8", ...corsHeaders },
-        });
-      } catch (e) {
-        return json({ error: "Failed to generate AI report", detail: String(e) }, 502, corsHeaders);
-      }
+      return json({ error: "AI report feature is currently disabled" }, 501, corsHeaders);
     }
 
     // GET / - Terminal weather (auto-location via GeoIP or default)

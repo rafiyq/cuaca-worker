@@ -127,6 +127,12 @@ function formatTemp(temp: number): string {
   return `${sign}${temp}°C`;
 }
 
+// Signed number only, no unit (for the big current-temp display where °C is a separate span)
+function formatTempNum(temp: number): string {
+  const sign = temp >= 0 ? "+" : "";
+  return `${sign}${temp}`;
+}
+
 function formatWind(speed: number, dir: string): string {
   return `${windArrow(dir)} ${speed.toFixed(1)} km/h`;
 }
@@ -186,7 +192,7 @@ function ansiTemp(temp: number): string {
 function ansiWarning(severity: string): string {
   const s = severity.toLowerCase();
   if (s === "extreme" || s === "severe") return `${ANSI.bgRed}${ANSI.white} ${severity} ${ANSI.reset}`;
-  if (s === "moderate") return `${ANSI.bgYellow}${ANSI.black} ${severity} ${ANSI.reset}`;
+  if (s === "moderate") return `${ANSI.bgYellow}${ANSI.gray} ${severity} ${ANSI.reset}`;
   if (s === "minor") return `${ANSI.yellow} ${severity} ${ANSI.reset}`;
   return `${ANSI.dim} ${severity} ${ANSI.reset}`;
 }
@@ -287,13 +293,13 @@ export function renderTerminal(
       const label = getIconLabel(f.weather || 0, hour);
       
       // 5 data rows, icon on LEFT of each
-      const emptyIcon = " ".repeat(ICON_W);
+      const emptyIcon = " ".repeat(14);
       colBlocks.push([
-        padCell(` ${icon[0]} ` + ` ${label} `, cellW),
-        padCell(` ${icon[1]} ` + ` ${ansiTemp(f.temp)} `, cellW),
-        padCell(` ${icon[2]} ` + ` ${formatWind(f.windSpeed, f.windDir)} `, cellW),
-        padCell(` ${emptyIcon} ` + ` ${f.cloudCover}% cloud `, cellW),
-        padCell(` ${emptyIcon} ` + ` R${f.rainProb}% H${f.humidity}% `, cellW),
+        padCell(` ${icon[0]} ` + ` ${label} `, 28),
+        padCell(` ${icon[1]} ` + ` ${ansiTemp(f.temp)} `, 28),
+        padCell(` ${icon[2]} ` + ` ${formatWind(f.windSpeed, f.windDir)} `, 28),
+        padCell(` ${emptyIcon} ` + ` ${f.cloudCover}% cloud `, 28),
+        padCell(` ${emptyIcon} ` + ` R${f.rainProb}% H${f.humidity}% `, 28),
       ]);
     }
     
@@ -322,81 +328,578 @@ export function renderTerminal(
   return lines.join("\n");
 }
 
-// Render HTML for browser (with ANSI-to-HTML conversion)
+// Emoji weather icons for web view (ASCII art is for terminal only)
+function getWeatherEmoji(weatherCode: number, hour: number): string {
+  const isDay = hour >= 6 && hour < 18;
+  const icons: Record<number, { day: string; night: string }> = {
+    0: { day: "☀️", night: "🌙" },          // Cerah / Sunny
+    1: { day: "🌤️", night: "🌙" },          // Cerah Berawan / Partly cloudy
+    2: { day: "⛅", night: "☁️" },           // Berawan / Cloudy
+    3: { day: "☁️", night: "☁️" },           // Berawan Tebal / Overcast
+    4: { day: "☁️", night: "☁️" },           // Berawan Tebal / Overcast
+    5: { day: "🌫️", night: "🌫️" },           // Kabut / Fog
+    10: { day: "🌦️", night: "🌧️" },          // Hujan Ringan / Light rain
+    11: { day: "🌧️", night: "🌧️" },          // Hujan / Rain
+    12: { day: "🌧️", night: "🌧️" },          // Hujan Lebat / Heavy rain
+    13: { day: "⛈️", night: "⛈️" },          // Hujan Petir / Thunderstorm
+    14: { day: "⛈️", night: "⛈️" },          // Hujan Petir Lebat / Heavy thunderstorm
+  };
+  const icon = icons[weatherCode] || icons[0];
+  return isDay ? icon.day : icon.night;
+}
+
+// Wind direction to emoji arrow
+function windEmoji(dir: string): string {
+  const arrows: Record<string, string> = {
+    "N": "⬆️", "NNE": "⬆️", "NE": "↗️", "ENE": "↗️",
+    "E": "➡️", "ESE": "↘️", "SE": "↘️", "SSE": "⬇️",
+    "S": "⬇️", "SSW": "⬇️", "SW": "↙️", "WSW": "↙️",
+    "W": "⬅️", "WNW": "↖️", "NW": "↖️", "NNW": "⬆️",
+  };
+  return arrows[dir] || "➡️";
+}
+
+// Render HTML for browser - Modern styled weather page
 export function renderHTML(
   location: LocationInfo, 
   forecast: SimpleForecast[], 
   warnings: Warning[] = []
 ): string {
-  const terminalOutput = renderTerminal(location, forecast, warnings);
+  const days = groupByDay(forecast);
+  const current = forecast[0];
+  const currentHour = new Date(current.time).getHours();
+  const isDay = currentHour >= 6 && currentHour < 18;
   
-  // Convert ANSI to HTML spans
-  let html = terminalOutput
-    .replace(/&/g, "&")
-    .replace(/</g, "<")
-    .replace(/>/g, ">")
-    // Bold, dim
-    .replace(/\x1b\[1m/g, '<span class="bold">')
-    .replace(/\x1b\[2m/g, '<span class="dim">')
-    // Foreground colors
-    .replace(/\x1b\[38;5;(\d+)m/g, (_, code) => `<span class="c${code}">`)
-    // Background colors
-    .replace(/\x1b\[48;5;(\d+)m/g, (_, code) => `<span class="bg${code}">`)
-    // Common combined: blue bg + white fg
-    .replace(/\x1b\[44m\x1b\[38;5;255m/g, '<span class="bg044 c255">')
-    .replace(/\x1b\[44m/g, '<span class="bg044">')
-    .replace(/\x1b\[41m/g, '<span class="bg196">')
-    .replace(/\x1b\[43m/g, '<span class="bg226">')
-    // Reset
-    .replace(/\x1b\[0m/g, '</span>')
-    .replace(/\n/g, "<br>");
+  // Build forecast data for template
+  const dayBlocks = [];
+  let dayCount = 0;
+  for (const [date, dayForecasts] of days) {
+    if (dayCount >= 3) break;
+    dayCount++;
+    
+    const dayName = new Date(date).toLocaleDateString("en-US", { weekday: "short", day: "2-digit", month: "short" });
+    const dayLabel = dayCount === 1 ? "Today" : dayCount === 2 ? "Tomorrow" : "Day after";
+    
+    const sortedSlots = dayForecasts
+      .sort((a, b) => new Date(a.time).getHours() - new Date(b.time).getHours())
+      .slice(0, 8);
+    
+    const slots = sortedSlots.map(f => {
+      const date = new Date(f.time);
+      const hour = date.getHours();
+      const icon = getAsciiIcon(f.weather || 0, hour);
+      const label = getIconLabel(f.weather || 0, hour);
+      return {
+        hour,
+        timeStr: `${hour.toString().padStart(2, "0")}:00`,
+        temp: f.temp,
+        condition: label,
+        humidity: f.humidity,
+        windSpeed: f.windSpeed,
+        windDir: f.windDir,
+        cloudCover: f.cloudCover,
+        rainProb: f.rainProb,
+        weatherCode: f.weather || 0,
+        emoji: getWeatherEmoji(f.weather || 0, hour),
+        isDay: hour >= 6 && hour < 18
+      };
+    });
+    
+    dayBlocks.push({ date, dayName: dayLabel, dayLabel, slots });
+  }
+  
+  // Current conditions
+  const currentLabel = getIconLabel(current.weather || 0, currentHour);
+  
+  // Warnings HTML
+  const warningsHtml = warnings.length > 0
+    ? warnings.slice(0, 3).map(w => `
+      <div class="warning-card ${w.severity.toLowerCase()}">
+        <div class="warning-header">
+          <span class="warning-icon">⚠</span>
+          <span class="warning-event">${w.event}</span>
+          <span class="warning-severity ${w.severity.toLowerCase()}">${w.severity}</span>
+        </div>
+        <div class="warning-area">${w.areaDesc}</div>
+        <div class="warning-time">${w.effective} → ${w.expires}</div>
+        ${w.description ? `<div class="warning-desc">${w.description.split("\n")[0].slice(0, 120)}</div>` : ""}
+      </div>`).join("")
+    : "";
+  
+  // Location string
+  const locationStr = `${location.desa}, ${location.kecamatan}, ${location.kotkab}, ${location.provinsi}`;
+  
+  // Current conditions
+  
+  // Temp color class helper
+  function getTempClass(temp: number): string {
+    if (temp >= 35) return "temp-hot";
+    if (temp >= 30) return "temp-warm";
+    if (temp >= 25) return "temp-mild";
+    if (temp >= 20) return "temp-cool";
+    return "temp-cold";
+
+// Helper to get current icon lines for header
+  }
   
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="id">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Cuaca ${location.desa} - BMKG Weather Forecast">
+  <meta name="theme-color" content="#1e1e2e">
   <title>cuaca - ${location.desa}</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { 
-      font-family: 'JetBrains Mono', 'Fira Code', 'Monaco', 'Consolas', monospace; 
-      background: #1a1b26; color: #c0caf5; 
-      padding: 20px; line-height: 1.6; font-size: 14px;
-      min-height: 100vh;
+    
+    :root {
+      --bg: #181825;
+      --bg-elevated: #1e1e2e;
+      --fg: #cdd6f4;
+      --fg-muted: #6c7086;
+      --accent: #89b4fa;
+      --accent-dim: #74c7ec;
+      --warm: #fab387;
+      --hot: #f38ba8;
+      --cool: #89dceb;
+      --green: #a6e3a1;
+      --border: #313244;
+      --shadow: 0 4px 24px rgba(0,0,0,0.4);
     }
-    .bold { font-weight: bold; }
-    .dim { opacity: 0.6; }
-    .c196 { color: #ff0000; } .c202 { color: #ff5f00; } .c208 { color: #ff8700; }
-    .c214 { color: #ffaf00; } .c220 { color: #ffd700; } .c226 { color: #ffff00; }
-    .c118 { color: #87ff00; } .c082 { color: #5fff00; } .c154 { color: #87ff5f; }
-    .c190 { color: #d7ff00; } .c220 { color: #ffd700; }
-    .c201 { color: #ff00ff; } .c039 { color: #00afff; } .c051 { color: #00ffff; }
-    .c244 { color: #767676; } .c255 { color: #ffffff; }
-    .bg044 { background: #0000af; }
-    .bg196 { background: #ff0000; color: #fff; }
-    .bg226 { background: #ffff00; color: #000; }
-    pre { white-space: pre-wrap; word-wrap: break-word; }
-    a { color: #7aa2f7; text-decoration: none; }
-    a:hover { text-decoration: underline; }
-    .hint { color: #565f89; font-size: 12px; margin-top: 20px; }
+    
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #eff1f5;
+        --bg-elevated: #ffffff;
+        --fg: #4c4f69;
+        --fg-muted: #7287fd;
+        --accent: #1e66f5;
+        --accent-dim: #04a5e5;
+        --warm: #df8e1d;
+        --hot: #d20f39;
+        --cool: #04a5e5;
+        --green: #40a02b;
+        --border: #ccd0da;
+      }
+    }
+    
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      font-family: 'JetBrains Mono', 'Fira Code', 'Monaco', 'Consolas', monospace;
+      background: var(--bg);
+      color: var(--fg);
+      min-height: 100vh;
+      padding: 24px 16px;
+      line-height: 1.5;
+      font-size: 14px;
+      transition: background 0.3s, color 0.3s;
+    }
+    
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    
+    /* Header */
+    header {
+      margin-bottom: 32px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+    }
+    
+    .location-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 8px;
+    }
+    
+    .location-icon {
+      font-size: 48px;
+      line-height: 1;
+      filter: drop-shadow(0 4px 12px rgba(0,0,0,0.3));
+      animation: float 3s ease-in-out infinite;
+    }
+    
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-4px); }
+    }
+    
+    .location-info {
+      flex: 1;
+    }
+    
+    .location-name {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      margin-bottom: 4px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-dim));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .location-meta {
+      color: var(--fg-muted);
+      font-size: 13px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    
+    .current-condition {
+      margin-top: 16px;
+      font-size: 15px;
+      color: var(--fg-muted);
+    }
+    
+    /* Current Temp Card */
+    .current-temp {
+      display: inline-flex;
+      align-items: center;
+      gap: 20px;
+      padding: 16px 24px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      margin-top: 16px;
+    }
+    
+    .temp-main {
+      display: flex;
+      align-items: baseline;
+      gap: 2px;
+    }
+    
+    .temp-value {
+      font-size: 56px;
+      font-weight: 700;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+    
+    .temp-unit { font-size: 20px; }
+    
+    .temp-detail {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-left: 16px;
+      padding-left: 16px;
+      border-left: 1px solid var(--border);
+    }
+    
+    .detail-row { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+    .detail-icon { color: var(--accent-dim); }
+    .detail-label { color: var(--fg-muted); }
+    .detail-value { color: var(--fg); }
+    
+    /* Warnings */
+    .warnings-section {
+      margin-bottom: 24px;
+    }
+    
+    .warnings-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--hot);
+      margin-bottom: 12px;
+    }
+    
+    .warning-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 8px;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    
+    .warning-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow);
+    }
+    
+    .warning-card.extreme, .warning-card.severe {
+      border-color: var(--hot);
+      background: rgba(243, 138, 168, 0.1);
+    }
+    
+    .warning-card.moderate {
+      border-color: var(--warm);
+      background: rgba(250, 179, 135, 0.1);
+    }
+    
+    .warning-card.minor {
+      border-color: var(--warm);
+      background: rgba(250, 179, 135, 0.05);
+    }
+    
+    .warning-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .warning-icon { font-size: 16px; }
+    .warning-event { font-weight: 600; flex: 1; }
+    .warning-severity { 
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 999px;
+      text-transform: uppercase;
+    }
+    .warning-severity.extreme, .warning-severity.severe { background: var(--hot); color: white; }
+    .warning-severity.moderate { background: var(--warm); color: #1e1e2e; }
+    .warning-severity.minor { background: var(--warm); color: #1e1e2e; opacity: 0.8; }
+    .warning-area { font-size: 13px; color: var(--fg-muted); margin-bottom: 4px; }
+    .warning-time { font-size: 11px; color: var(--fg-muted); font-family: monospace; }
+    .warning-desc { font-size: 12px; color: var(--fg); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+    
+    /* Forecast Days */
+    .forecast-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+    
+    .day-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    
+    .day-card:hover {
+      transform: translateY(-4px);
+      box-shadow: var(--shadow);
+    }
+    
+    .day-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px;
+      background: linear-gradient(135deg, var(--border), transparent);
+      border-bottom: 1px solid var(--border);
+    }
+    
+    .day-label { font-weight: 700; font-size: 14px; }
+    .day-date { color: var(--fg-muted); font-size: 12px; }
+    
+    .slots-container { padding: 12px 16px; }
+    
+    .slot-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 8px;
+      margin: 0 -8px;
+      border-bottom: 1px solid var(--border);
+      border-radius: 8px;
+      transition: background 0.2s;
+    }
+    
+    .slot-row:last-child { border-bottom: none; }
+    
+    .slot-row:hover { background: var(--border); border-radius: 8px; }
+    
+    .slot-time {
+      font-family: monospace;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--accent);
+      width: 52px;
+      flex-shrink: 0;
+    }
+    
+    .slot-icon {
+      font-size: 26px;
+      line-height: 1;
+      min-width: 32px;
+      text-align: center;
+    }
+    
+    .slot-info { flex: 1; min-width: 0; }
+    
+    .slot-condition { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    
+    .slot-details { display: flex; flex-wrap: wrap; gap: 8px 12px; margin-top: 6px; font-size: 11px; color: var(--fg-muted); }
+    .detail { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+    .detail-emoji { font-size: 12px; line-height: 1; filter: saturate(1.2); }
+    
+    .slot-temp {
+      font-family: monospace;
+      font-size: 15px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--fg);
+      flex-shrink: 0;
+      margin-left: auto;
+    }
+    
+    /* Temp color classes */
+    .temp-hot { color: var(--hot); }
+    .temp-warm { color: var(--warm); }
+    .temp-mild { color: var(--accent-dim); }
+    .temp-cool { color: var(--cool); }
+    .temp-cold { color: #89dceb; }
+    
+    /* Footer */
+    footer {
+      margin-top: 32px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      color: var(--fg-muted);
+      font-size: 12px;
+      text-align: center;
+    }
+    
+    footer a { color: var(--accent); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+    
+    .footer-links { display: flex; justify-content: center; gap: 16px; margin-top: 8px; flex-wrap: wrap; }
+    
+    /* Mobile */
+    @media (max-width: 600px) {
+      body { padding: 16px 12px; font-size: 13px; }
+      .location-name { font-size: 22px; }
+      .location-icon { font-size: 36px; }
+      .temp-value { font-size: 44px; }
+      .temp-detail { margin-left: 12px; padding-left: 12px; }
+      .detail-row { font-size: 12px; }
+      .forecast-grid { grid-template-columns: 1fr; }
+      .slot-row { gap: 8px; padding: 8px 4px; margin: 0 -4px; }
+      .slot-time { font-size: 12px; width: 46px; }
+      .slot-icon { font-size: 22px; min-width: 28px; }
+      .slot-details { gap: 6px 10px; font-size: 10px; }
+      .slot-temp { font-size: 14px; }
+    }
+    
+    /* Reduced motion */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+    
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--fg-muted); }
   </style>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 </head>
 <body>
-<pre>${html}</pre>
-<div class="hint">
-  Try: <code>curl ${location.desa}</code> | <code>curl wttr.in</code> style<br>
-  Data: <a href="https://bmkg.go.id" target="_blank">BMKG</a> | Geo: <a href="https://api.wilayah.workers.dev" target="_blank">wilayah.workers.dev</a> | Built with Cloudflare Workers
-</div>
+  <div class="container">
+    <header>
+      <div class="location-header">
+        <div class="location-icon" aria-hidden="true">${getWeatherEmoji(current.weather || 0, currentHour)}</div>
+        <div class="location-info">
+          <h1 class="location-name">${location.desa}</h1>
+          <div class="location-meta">
+            <span>${location.kecamatan}, ${location.kotkab}</span>
+            <span>•</span>
+            <span>${location.provinsi}</span>
+            <span>•</span>
+            <span>${location.lat.toFixed(4)}, ${location.lon.toFixed(4)}</span>
+          </div>
+        </div>
+      </div>
+      
+      <div class="current-condition">${currentLabel} • Updated ${new Date(current.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+      
+      <div class="current-temp">
+        <div class="temp-main">
+          <span class="temp-value ${getTempClass(current.temp)}">${formatTempNum(current.temp)}</span>
+          <span class="temp-unit">°C</span>
+        </div>
+        <div class="temp-detail">
+          <div class="detail-row"><span class="detail-icon">💧</span><span class="detail-label">Humidity</span><span class="detail-value">${current.humidity}%</span></div>
+          <div class="detail-row"><span class="detail-icon">💨</span><span class="detail-label">Wind</span><span class="detail-value">${formatWind(current.windSpeed, current.windDir)}</span></div>
+          <div class="detail-row"><span class="detail-icon">☁</span><span class="detail-label">Cloud</span><span class="detail-value">${current.cloudCover}%</span></div>
+          <div class="detail-row"><span class="detail-icon">🌧</span><span class="detail-label">Rain</span><span class="detail-value">${current.rainProb}%</span></div>
+        </div>
+      </div>
+    </header>
+    
+    ${warningsHtml ? `<section class="warnings-section">
+      <h2 class="warnings-title"><span>⚠</span> Weather Warnings</h2>
+      <div class="warnings-list">${warningsHtml}</div>
+    </section>` : ""}
+    
+    <section class="forecast-section">
+      <div class="forecast-grid">
+        ${dayBlocks.map(day => `
+        <article class="day-card">
+          <div class="day-header">
+            <span class="day-label">${day.dayLabel}</span>
+            <span class="day-date">${day.date}</span>
+          </div>
+          <div class="slots-container">
+            ${day.slots.map(slot => `
+            <div class="slot-row">
+              <span class="slot-time">${slot.timeStr}</span>
+              <span class="slot-icon" aria-hidden="true">${slot.emoji}</span>
+              <div class="slot-info">
+                <div class="slot-condition">${slot.condition}</div>
+                <div class="slot-details">
+                  <span class="detail"><span class="detail-emoji">💧</span>${slot.humidity}%</span>
+                  <span class="detail"><span class="detail-emoji">${windEmoji(slot.windDir)}</span>${slot.windSpeed.toFixed(1)} km/h</span>
+                  <span class="detail"><span class="detail-emoji">☁️</span>${slot.cloudCover}%</span>
+                  <span class="detail"><span class="detail-emoji">🌧️</span>${slot.rainProb}%</span>
+                </div>
+              </div>
+              <span class="slot-temp ${getTempClass(slot.temp)}">${formatTemp(slot.temp)}</span>
+            </div>`).join("")}
+          </div>
+        </article>`).join("")}
+      </div>
+    </section>
+    
+    <footer>
+      <p>Data: <a href="https://bmkg.go.id" target="_blank" rel="noopener">BMKG</a> • Geo: <a href="https://api.wilayah.workers.dev" target="_blank" rel="noopener">wilayah.workers.dev</a></p>
+      <div class="footer-links">
+        <a href="https://github.com/yourusername/cuaca-worker" target="_blank" rel="noopener">Source</a>
+        <a href="https://wttr.in" target="_blank" rel="noopener">wttr.in</a>
+        <span>Built with Cloudflare Workers</span>
+      </div>
+    </footer>
+  </div>
 </body></html>`;
 }
+
+function getTempClass(temp: number): string {
+  if (temp >= 35) return "temp-hot";
+  if (temp >= 30) return "temp-warm";
+  if (temp >= 25) return "temp-mild";
+  if (temp >= 20) return "temp-cool";
+  return "temp-cold";
+
+// Helper to get current icon lines for header
+}
+
+// Helper to get current icon lines for header
 
 // Detect if request wants HTML (browser) or plain text (curl)
 export function wantsHTML(request: Request): boolean {
   const accept = request.headers.get("accept") || "";
   const userAgent = request.headers.get("user-agent") || "";
-  return accept.includes("text/html") && !userAgent.includes("curl");
+  // Return HTML if:
+  // 1. Explicitly requested text/html in Accept header
+  // 2. Not a known CLI tool (curl, wget, httpie, etc.)
+  const isCli = /curl|wget|httpie|axios|fetch/i.test(userAgent);
+  return accept.includes("text/html") && !isCli;
 }
