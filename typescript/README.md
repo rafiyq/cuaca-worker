@@ -2,7 +2,7 @@
 
 [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/yourusername/cuaca-worker)
 
-A **wttr.in-style** weather service for Indonesia, powered by **BMKG** (Badan Meteorologi, Klimatologi, dan Geofisika) and **wilayah-worker** for location lookup. Runs on **Cloudflare Workers** with zero cold starts and minimal footprint.
+A terminal-first weather service for Indonesia, powered by **BMKG** (Badan Meteorologi, Klimatologi, dan Geofisika) and **wilayah-worker** for location lookup. Runs on **Cloudflare Workers** with zero cold starts and minimal footprint.
 
 ```
 $ curl cuaca.workers.dev/Jakarta
@@ -28,7 +28,7 @@ $ curl cuaca.workers.dev/Jakarta
 | Feature | Description |
 |---------|-------------|
 | **Terminal-first** | ANSI-colored output for `curl`, HTML for browsers |
-| **wttr.in compatible** | `?format=3` short format, custom templates |
+| **One-line formats** | `?format=3` short format, custom templates |
 | **Auto-location** | Cloudflare GeoIP headers → nearest village |
 | **Indonesia coverage** | 80k+ villages via wilayah-worker API |
 | **BMKG official data** | 3-day forecast, 3-hour intervals, weather warnings |
@@ -40,7 +40,7 @@ $ curl cuaca.workers.dev/Jakarta
 
 ### Terminal (curl)
 ```bash
-# Full weather (wttr.in style)
+# Full weather
 curl cuaca.workers.dev/Jakarta
 curl cuaca.workers.dev/Bandung
 curl cuaca.workers.dev/"Kemayoran"
@@ -170,7 +170,6 @@ npm run typecheck  # TypeScript check
 
 - **[rafiyq/cuaca](https://github.com/rafiyq/cuaca)** — Rust CLI for Waybar (custom formats, warnings, daemon)
 - **[rafiyq/wilayah-worker](https://github.com/rafiyq/wilayah-worker)** — Village lookup API on Cloudflare Workers (D1, GeoIP)
-- **[wttr.in](https://wttr.in)** — Terminal weather presentation
 
 ## License
 

@@ -1,5 +1,5 @@
-// wttr.in-style terminal weather renderer
-// Converts BMKG forecast to ANSI/HTML terminal output
+// cuaca terminal weather renderer
+// Converts BMKG forecast to ANSI (curl) and HTML (browser) output
 
 export interface SimpleForecast {
   time: string;        // "2026-10-13 09:00:00"
@@ -604,7 +604,7 @@ export function renderHTML(
     * { box-sizing: border-box; margin: 0; padding: 0; }
     
     body {
-      font-family: 'JetBrains Mono', 'Fira Code', 'Monaco', 'Consolas', monospace;
+      font-family: ui-monospace, 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace;
       background: var(--bg);
       color: var(--fg);
       min-height: 100vh;
@@ -929,9 +929,6 @@ export function renderHTML(
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--fg-muted); }
   </style>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 </head>
 <body>
   <div class="container">
@@ -1002,7 +999,6 @@ export function renderHTML(
       <p>Data: <a href="https://bmkg.go.id" target="_blank" rel="noopener">BMKG</a> • Geo: <a href="https://api.wilayah.workers.dev" target="_blank" rel="noopener">wilayah.workers.dev</a></p>
       <div class="footer-links">
         <a href="https://github.com/yourusername/cuaca-worker" target="_blank" rel="noopener">Source</a>
-        <a href="https://wttr.in" target="_blank" rel="noopener">wttr.in</a>
         <span>Built with Cloudflare Workers</span>
       </div>
     </footer>

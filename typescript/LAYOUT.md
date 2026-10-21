@@ -77,13 +77,13 @@ Layout wireframe for `renderHTML()` in `src/render.ts` — helps identify each p
 ├─────────────────────────────────────────────────────────────────────────┤
 │                              [4] FOOTER (‹footer›)                       │
 │   Data: BMKG • Geo: wilayah.workers.dev                                  │
-│   Source  |  wttr.in  |  Built with Cloudflare Workers                   │
+│   Source  |  Built with Cloudflare Workers                                │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## [3d] SLOTS-GRID + SLOT-COL Detail (wttr.in-style columns)
+## [3d] SLOTS-GRID + SLOT-COL Detail
 
 Each day card's slots are a **horizontal, scrollable row of columns** —
 one column per BMKG 3-hour slot, each with its own mini ASCII art.
