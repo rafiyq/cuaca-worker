@@ -6,7 +6,7 @@ describe("cuaca-worker", () => {
     const req = new Request("http://localhost/api/forecast");
     const res = await worker.fetch(req, {} as any);
     expect(res.status).toBe(400);
-    const json = await res.json();
+    const json: any = await res.json();
     expect(json.error).toContain("adm4");
   });
 
@@ -24,7 +24,7 @@ describe("cuaca-worker", () => {
     });
     const res = await worker.fetch(req, {} as any);
     expect(res.status).toBe(200);
-    const json = await res.json();
+    const json: any = await res.json();
     expect(json.examples).toBeInstanceOf(Array);
     expect(json.examples.length).toBeGreaterThan(0);
   });

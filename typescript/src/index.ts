@@ -21,17 +21,6 @@ interface BmkgForecastItem {
   utc_datetime: string; local_datetime: string;
 }
 
-interface SimpleForecast {
-  time: string; temp: number; condition: string; conditionEn: string;
-  humidity: number; windSpeed: number; windDir: string; cloudCover: number; rainProb: number;
-  weather: number;
-}
-
-interface LocationInfo {
-  provinsi: string; kotkab: string; kecamatan: string; desa: string;
-  lat: number; lon: number; adm4: string;
-}
-
 interface WilayahSearchResult {
   code: string;
   name: string;
@@ -56,10 +45,16 @@ interface WilayahCodeResult {
   lon: number;
 }
 
-import { renderTerminal, renderHTML, wantsHTML, SimpleForecast, LocationInfo, Warning } from "./render";
+// Cloudflare bindings (minimal; see worker-configuration.d.ts for generated types)
+interface Env {
+  AI?: unknown;
+  ASSETS?: unknown;
+}
+
+import { renderTerminal, renderHTML, wantsHTML, SimpleForecast, LocationInfo, Warning, weatherEmoji, asciiIconSingle } from "./render";
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const corsHeaders = {
       "Access-Control-Allow-Origin": "*",
@@ -154,50 +149,7 @@ export default {
     if (url.pathname === "/" || url.pathname === "/weather") {
       const adm4 = await resolveAdm4FromRequest(request, url);
       try {
-        const [data, warnings] = await Promise.all([
-          fetchForecast(adm4),
-          fetchWarnings(adm4).catch(() => []),
-        ]);
-        
-        const location: LocationInfo = {
-          provinsi: data.location.provinsi,
-          kotkab: data.location.kotkab,
-          kecamatan: data.location.kecamatan,
-          desa: data.location.desa,
-          lat: data.location.lat,
-          lon: data.location.lon,
-          adm4: data.location.adm4,
-        };
-
-        const format = url.searchParams.get("format");
-        
-        if (format === "3" || format === "short") {
-          const current = data.forecast[0];
-          const icon = getWeatherEmoji(current.weather, new Date(current.time).getHours());
-          const text = `${location.desa}: ${icon} ${formatTemp(current.temp)}`;
-          return new Response(text, {
-            headers: { "Content-Type": "text/plain; charset=utf-8", ...corsHeaders },
-          });
-        }
-        
-        if (format && !["3", "short"].includes(format)) {
-          // Custom format like Waybar: {ICON} {t}°C
-          const current = data.forecast[0];
-          const formatted = formatCustom(format, current, location);
-          return new Response(formatted, {
-            headers: { "Content-Type": "text/plain; charset=utf-8", ...corsHeaders },
-          });
-        }
-
-        if (wantsHTML(request)) {
-          return new Response(renderHTML(location, data.forecast, warnings), {
-            headers: { "Content-Type": "text/html; charset=utf-8", ...corsHeaders },
-          });
-        } else {
-          return new Response(renderTerminal(location, data.forecast, warnings), {
-            headers: { "Content-Type": "text/plain; charset=utf-8", ...corsHeaders },
-          });
-        }
+        return await serveWeatherView(request, ctx, adm4, url.searchParams.get("format"), corsHeaders);
       } catch (e) {
         return new Response(`Error: ${e}`, { status: 502, headers: corsHeaders });
       }
@@ -206,51 +158,9 @@ export default {
     // GET /:location - Location by name/code with format support
     if (url.pathname.startsWith("/") && url.pathname.length > 1 && !url.pathname.startsWith("/api")) {
       const locationName = url.pathname.slice(1);
-      const adm4 = await resolveLocation(locationName) || "31.71.03.1001";
-      const format = url.searchParams.get("format");
-      
+      const adm4 = await resolveLocationCached(locationName) || "31.71.03.1001";
       try {
-        const [data, warnings] = await Promise.all([
-          fetchForecast(adm4),
-          fetchWarnings(adm4).catch(() => []),
-        ]);
-        
-        const location: LocationInfo = {
-          provinsi: data.location.provinsi,
-          kotkab: data.location.kotkab,
-          kecamatan: data.location.kecamatan,
-          desa: data.location.desa,
-          lat: data.location.lat,
-          lon: data.location.lon,
-          adm4: data.location.adm4,
-        };
-
-        if (format === "3" || format === "short") {
-          const current = data.forecast[0];
-          const icon = getWeatherEmoji(current.weather, new Date(current.time).getHours());
-          const text = `${location.desa}: ${icon} ${formatTemp(current.temp)}`;
-          return new Response(text, {
-            headers: { "Content-Type": "text/plain; charset=utf-8", ...corsHeaders },
-          });
-        }
-        
-        if (format && !["3", "short"].includes(format)) {
-          const current = data.forecast[0];
-          const formatted = formatCustom(format, current, location);
-          return new Response(formatted, {
-            headers: { "Content-Type": "text/plain; charset=utf-8", ...corsHeaders },
-          });
-        }
-
-        if (wantsHTML(request)) {
-          return new Response(renderHTML(location, data.forecast, warnings), {
-            headers: { "Content-Type": "text/html; charset=utf-8", ...corsHeaders },
-          });
-        } else {
-          return new Response(renderTerminal(location, data.forecast, warnings), {
-            headers: { "Content-Type": "text/plain; charset=utf-8", ...corsHeaders },
-          });
-        }
+        return await serveWeatherView(request, ctx, adm4, url.searchParams.get("format"), corsHeaders);
       } catch (e) {
         return new Response(`Error: ${e}`, { status: 502, headers: corsHeaders });
       }
@@ -286,6 +196,175 @@ export default {
     }, 404, corsHeaders);
   },
 } satisfies ExportedHandler<Env>;
+
+// ===== Rendered-response cache (see PERF.md) =====
+// Layer 1: per-isolate memory cache (fastest; isolate reuse makes this very effective)
+// Layer 2: Cache API (per-colo edge cache, shared across isolates)
+// TTL = 5 min, matching forecast freshness. Keyed by resolved adm4 + view so
+// /Jakarta, /?adm4=... and GeoIP hits share one artifact.
+
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const CACHE_TTL_S = 300;
+const RES_CACHE_MAX = 500;
+
+interface CachedResponse {
+  expires: number;
+  body: string;
+  headers: Record<string, string>; // serialized response headers
+}
+const resCache = new Map<string, CachedResponse>();
+
+// name/geo -> adm4 resolution cache (24h, matching wilayah upstream cache)
+const RESOLVE_TTL_MS = 24 * 60 * 60 * 1000;
+const resolveCache = new Map<string, { expires: number; adm4: string }>();
+
+function cacheKey(adm4: string, view: string): string {
+  return `${adm4}:${view}`;
+}
+
+function setResCache(key: string, entry: CachedResponse): void {
+  if (resCache.size >= RES_CACHE_MAX) {
+    // simple FIFO eviction: Map preserves insertion order
+    resCache.delete(resCache.keys().next().value as string);
+  }
+  resCache.set(key, entry);
+}
+
+function responseHeaders(h: Record<string, string>, cacheStatus: string, timing: string): Headers {
+  const headers = new Headers(h);
+  headers.set("X-Cuaca-Cache", cacheStatus);
+  headers.set("Server-Timing", timing);
+  return headers;
+}
+
+// Serve one of the weather views with caching (used by / and /:location)
+async function serveWeatherView(
+  request: Request,
+  ctx: ExecutionContext | undefined,
+  adm4: string,
+  format: string | null,
+  corsHeaders: Record<string, string>
+): Promise<Response> {
+  // Determine view; only full views need warnings (short/custom skip the fetch)
+  const view =
+    format === "3" || format === "short" ? "short"
+    : format ? "custom"
+    : wantsHTML(request) ? "html"
+    : "terminal";
+
+  const baseHeaders: Record<string, string> = {
+    "Content-Type": view === "html" ? "text/html; charset=utf-8" : "text/plain; charset=utf-8",
+    ...corsHeaders,
+  };
+
+  // Custom formats are per-user templates: never cached
+  if (view === "custom") {
+    const t0 = Date.now();
+    const data = await fetchForecast(adm4);
+    const location = toLocationInfo(data);
+    const body = formatCustom(format as string, data.forecast[0], location);
+    return new Response(body, {
+      headers: responseHeaders(baseHeaders, "BYPASS", `upstream;dur=${Date.now() - t0}, cache;desc=BYPASS`),
+    });
+  }
+
+  const key = cacheKey(adm4, view);
+
+  // 1) Memory cache
+  const memHit = resCache.get(key);
+  if (memHit && memHit.expires > Date.now()) {
+    return new Response(memHit.body, {
+      headers: responseHeaders(memHit.headers, "MEMHIT", `cache;desc=MEM`),
+    });
+  }
+
+  // 2) Cache API (per-colo edge cache)
+  const cache = caches.default;
+  const cacheUrl = new Request(`https://cuaca.internal/cache/v1/${encodeURIComponent(adm4)}/${view}`);
+  const edgeHit: Response | undefined = await cache.match(cacheUrl);
+  if (edgeHit) {
+    const body = await edgeHit.text();
+    const headers: Record<string, string> = {};
+    edgeHit.headers.forEach((v, k) => { headers[k] = v; });
+    // promote to memory for next time
+    setResCache(key, { expires: Date.now() + CACHE_TTL_MS, body, headers });
+    return new Response(body, {
+      headers: responseHeaders(headers, "EDGEHIT", `cache;desc=EDGE`),
+    });
+  }
+
+  // 3) MISS: fetch + render
+  const tUp = Date.now();
+  const needsWarnings = view === "terminal" || view === "html";
+  const [data, warnings] = await Promise.all([
+    fetchForecast(adm4),
+    needsWarnings ? fetchWarnings(adm4).catch(() => [] as Warning[]) : Promise.resolve([] as Warning[]),
+  ]);
+  const upstreamMs = Date.now() - tUp;
+
+  const tRender = Date.now();
+  const location = toLocationInfo(data);
+  let body: string;
+  if (view === "short") {
+    const current = data.forecast[0];
+    const icon = weatherEmoji(current.weather, new Date(current.time).getHours());
+    body = `${location.desa}: ${icon} ${formatTemp(current.temp)}`;
+  } else if (view === "html") {
+    body = renderHTML(location, data.forecast, warnings);
+  } else {
+    body = renderTerminal(location, data.forecast, warnings);
+  }
+  const renderMs = Date.now() - tRender;
+
+  const headers: Record<string, string> = {
+    ...baseHeaders,
+    "Cache-Control": `public, max-age=60, s-maxage=${CACHE_TTL_S}, stale-while-revalidate=600`,
+  };
+
+  // populate memory + edge caches (edge write is async, never blocks the response)
+  setResCache(key, { expires: Date.now() + CACHE_TTL_MS, body, headers });
+  ctx?.waitUntil?.(cache.put(cacheUrl, new Response(body, { headers })));
+
+  return new Response(body, {
+    headers: responseHeaders(headers, "MISS", `upstream;dur=${upstreamMs}, render;dur=${renderMs}, cache;desc=MISS`),
+  });
+}
+
+function toLocationInfo(data: Awaited<ReturnType<typeof fetchForecast>>): LocationInfo {
+  return {
+    provinsi: data.location.provinsi,
+    kotkab: data.location.kotkab,
+    kecamatan: data.location.kecamatan,
+    desa: data.location.desa,
+    lat: data.location.lat,
+    lon: data.location.lon,
+    adm4: data.location.adm4,
+  };
+}
+
+// ===== Location resolution caches =====
+async function resolveLocationCached(name: string): Promise<string | null> {
+  const key = `name:${name.toLowerCase()}`;
+  const hit = resolveCache.get(key);
+  if (hit && hit.expires > Date.now()) return hit.adm4;
+  const adm4 = await resolveLocation(name);
+  if (adm4) resolveCache.set(key, { expires: Date.now() + RESOLVE_TTL_MS, adm4 });
+  return adm4;
+}
+
+async function nearestAdm4Cached(lat: number, lon: number): Promise<string | undefined> {
+  // round to ~1 km: GeoIP coords jitter between requests but resolve nearby
+  const key = `geo:${lat.toFixed(2)},${lon.toFixed(2)}`;
+  const hit = resolveCache.get(key);
+  if (hit && hit.expires > Date.now()) return hit.adm4;
+  const nearest = await nearestWilayah(lat, lon, 1);
+  if (nearest.length > 0) {
+    const adm4 = nearest[0].code;
+    resolveCache.set(key, { expires: Date.now() + RESOLVE_TTL_MS, adm4 });
+    return adm4;
+  }
+  return undefined;
+}
 
 // ===== BMKG Forecast =====
 async function fetchForecast(adm4: string): Promise<{
@@ -408,7 +487,7 @@ async function searchWilayah(query: string, limit: number): Promise<WilayahSearc
     cf: { cacheTtl: 86400, cacheEverything: true }, // 24h cache
   });
   if (!res.ok) throw new Error(`Wilayah ${res.status}`);
-  const data = await res.json();
+  const data = (await res.json()) as WilayahNearestResult;
   return data.results || [];
 }
 
@@ -418,7 +497,7 @@ async function nearestWilayah(lat: number, lon: number, limit: number): Promise<
     cf: { cacheTtl: 86400, cacheEverything: true },
   });
   if (!res.ok) throw new Error(`Wilayah ${res.status}`);
-  const data = await res.json();
+  const data = (await res.json()) as WilayahNearestResult;
   return data.results || [];
 }
 
@@ -446,20 +525,20 @@ async function resolveAdm4FromRequest(request: Request, url: URL): Promise<strin
   const explicitAdm4 = url.searchParams.get("adm4");
   if (explicitAdm4) return explicitAdm4;
 
-  // 2. Explicit lat/lon in query
+  // 2. Explicit lat/lon in query (cached ~1 km, 24 h)
   const lat = url.searchParams.get("lat");
   const lon = url.searchParams.get("lon");
   if (lat && lon) {
-    const nearest = await nearestWilayah(parseFloat(lat), parseFloat(lon), 1);
-    if (nearest.length > 0) return nearest[0].code;
+    const adm4 = await nearestAdm4Cached(parseFloat(lat), parseFloat(lon));
+    if (adm4) return adm4;
   }
 
-  // 3. Cloudflare GeoIP headers
+  // 3. Cloudflare GeoIP headers (cached ~1 km, 24 h)
   const cfLat = request.headers.get("CF-IPLatitude");
   const cfLon = request.headers.get("CF-IPLongitude");
   if (cfLat && cfLon) {
-    const nearest = await nearestWilayah(parseFloat(cfLat), parseFloat(cfLon), 1);
-    if (nearest.length > 0) return nearest[0].code;
+    const adm4 = await nearestAdm4Cached(parseFloat(cfLat), parseFloat(cfLon));
+    if (adm4) return adm4;
   }
 
   // 4. Default: Kemayoran, Jakarta
@@ -496,8 +575,8 @@ async function resolveLocation(name: string): Promise<string | null> {
 // ===== Custom Format (Waybar-style) =====
 function formatCustom(template: string, current: SimpleForecast, location: LocationInfo): string {
   const hour = new Date(current.time).getHours();
-  const icon = getWeatherEmoji(current.weather, hour);
-  const asciiIcon = getAsciiIcon(current.weather, hour);
+  const icon = weatherEmoji(current.weather, hour);
+  const asciiIcon = asciiIconSingle(current.weather, hour);
   const windArrow = getWindArrow(current.windDir);
   
   return template
@@ -531,39 +610,6 @@ function formatTemp(temp: number): string {
   return `${temp >= 0 ? "+" : ""}${temp}°C`;
 }
 
-function getWeatherEmoji(code: number, hour: number): string {
-  const isDay = hour >= 6 && hour < 18;
-  const icons: Record<number, { day: string; night: string }> = {
-    0: { day: "☀️", night: "🌙" },
-    1: { day: "🌤️", night: "🌙☁️" },
-    2: { day: "⛅", night: "☁️🌙" },
-    3: { day: "☁️", night: "☁️" },
-    4: { day: "☁️", night: "☁️" },
-    5: { day: "🌫️", night: "🌫️" },
-    10: { day: "🌦️", night: "🌧️" },
-    11: { day: "🌧️", night: "🌧️" },
-    12: { day: "⛈️", night: "⛈️" },
-    13: { day: "⛈️", night: "⛈️" },
-  };
-  return (icons[code] || icons[0])[isDay ? "day" : "night"];
-}
-
-function getAsciiIcon(code: number, hour: number): string {
-  const isDay = hour >= 6 && hour < 18;
-  const icons: Record<number, { day: string; night: string }> = {
-    0: { day: ".-.", night: "`-'" },
-    1: { day: ".-.", night: "`-'" },
-    2: { day: ".--.", night: ".--." },
-    3: { day: ".--.", night: ".--." },
-    4: { day: ".--.", night: ".--." },
-    5: { day: "(_)", night: "(_)" },
-    10: { day: ".-.", night: "`-'" },
-    11: { day: ".-.", night: "`-'" },
-    12: { day: ".-.", night: "`-'" },
-    13: { day: ".-.", night: "`-'" },
-  };
-  return (icons[code] || icons[0])[isDay ? "day" : "night"];
-}
 
 function getWindArrow(dir: string): string {
   const arrows: Record<string, string> = {

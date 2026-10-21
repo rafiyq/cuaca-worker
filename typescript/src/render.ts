@@ -21,6 +21,7 @@ export interface LocationInfo {
   desa: string;
   lat: number;
   lon: number;
+  adm4?: string;
 }
 
 export interface Warning {
@@ -387,6 +388,53 @@ export function renderTerminal(
   lines.push(`${ANSI.dim}Data: BMKG | Location: wilayah.workers.dev${ANSI.reset}`);
   
   return lines.join("\n");
+}
+
+// Emoji weather icons — keys match the real BMKG weather codes
+// (0,1,2,3,4,5,10,45,60,61,63,80,95,97). Exported for index.ts (?format=3, {ICON}).
+export function weatherEmoji(weatherCode: number, hour: number): string {
+  const isDay = hour >= 6 && hour < 18;
+  const icons: Record<number, { day: string; night: string }> = {
+    0:  { day: "\u2600\uFE0F", night: "\u{1F319}" },   // Cerah
+    1:  { day: "\u{1F324}\uFE0F", night: "\u{1F319}" }, // Cerah (mostly sunny)
+    2:  { day: "\u26C5", night: "\u2601\uFE0F" },       // Cerah Berawan
+    3:  { day: "\u2601\uFE0F", night: "\u2601\uFE0F" },// Berawan
+    4:  { day: "\u{1F325}\uFE0F", night: "\u2601\uFE0F" }, // Berawan Tebal
+    5:  { day: "\u{1F32B}\uFE0F", night: "\u{1F32B}\uFE0F" }, // Udara Kabur
+    10: { day: "\u{1F32B}\uFE0F", night: "\u{1F32B}\uFE0F" }, // Asap
+    45: { day: "\u{1F32B}\uFE0F", night: "\u{1F32B}\uFE0F" }, // Kabut
+    60: { day: "\u{1F326}\uFE0F", night: "\u{1F327}\uFE0F" }, // Hujan Ringan
+    61: { day: "\u{1F327}\uFE0F", night: "\u{1F327}\uFE0F" }, // Hujan Sedang
+    63: { day: "\u{1F327}\uFE0F", night: "\u{1F327}\uFE0F" }, // Hujan Lebat
+    80: { day: "\u{1F327}\uFE0F", night: "\u{1F327}\uFE0F" }, // Hujan Lokal
+    95: { day: "\u26C8\uFE0F", night: "\u26C8\uFE0F" },// Hujan Petir
+    97: { day: "\u26C8\uFE0F", night: "\u26C8\uFE0F" },// Hujan Petir Lebat
+  };
+  const icon = icons[weatherCode] || icons[0];
+  return isDay ? icon.day : icon.night;
+}
+
+// Single-line ASCII glyph for the {ICON_ASCII} custom-format placeholder.
+// Correct BMKG codes; distinct shapes per condition (Waybar/status bars).
+export function asciiIconSingle(weatherCode: number, hour: number): string {
+  const isDay = hour >= 6 && hour < 18;
+  switch (weatherCode) {
+    case 0:
+    case 1:  return isDay ? ".--." : "`--'";
+    case 2:  return isDay ? "\\_/" : ".--.";
+    case 3:
+    case 4:  return "(___)";
+    case 5:
+    case 10:
+    case 45: return "(_)";
+    case 60:
+    case 61: return "(  )";
+    case 63:
+    case 80: return "(__)";
+    case 95:
+    case 97: return "(_\u26A1";
+    default: return ".--.";
+  }
 }
 
 // ASCII icon as HTML: expand {sgr} tokens into colored <span>s (browser view)
