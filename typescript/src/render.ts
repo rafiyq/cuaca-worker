@@ -556,6 +556,11 @@ export function renderHTML(
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Cuaca ${location.desa} - BMKG Weather Forecast">
   <meta name="theme-color" content="#1e1e2e">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='5' fill='%23fbbf24'/%3E%3Cg stroke='%23fbbf24' stroke-width='2' stroke-linecap='round'%3E%3Cline x1='12' y1='1' x2='12' y2='4'/%3E%3Cline x1='12' y1='20' x2='12' y2='23'/%3E%3Cline x1='1' y1='12' x2='4' y2='12'/%3E%3Cline x1='20' y1='12' x2='23' y2='12'/%3E%3Cline x1='4.2' y1='4.2' x2='6.3' y2='6.3'/%3E%3Cline x1='17.7' y1='17.7' x2='19.8' y2='19.8'/%3E%3Cline x1='4.2' y1='19.8' x2='6.3' y2='17.7'/%3E%3Cline x1='17.7' y1='6.3' x2='19.8' y2='4.2'/%3E%3C/g%3E%3C/svg%3E">
+  <meta property="og:title" content="cuaca — ${location.desa}: ${formatTemp(current.temp)} ${current.condition}">
+  <meta property="og:description" content="BMKG 3-day forecast for ${location.desa}, ${location.kotkab}, ${location.provinsi}. Humidity ${current.humidity}%, rain ${current.rainProb}%.">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary">
   <title>cuaca - ${location.desa}</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }

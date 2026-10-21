@@ -83,6 +83,14 @@ describe("renderHTML", () => {
     expect(out).toContain("Hujan Petir");
   });
 
+  it("includes favicon and Open Graph meta for link unfurls", () => {
+    const out = renderHTML(loc, [sunnyDay]);
+    expect(out).toContain('rel="icon"');           // inline SVG favicon, no external request
+    expect(out).toContain('og:title');             // e.g. "cuaca — Kemayoran: +31°C Cerah"
+    expect(out).toContain('og:description');
+    expect(out).toContain('twitter:card');
+  });
+
   it("keeps single °C unit in current-temp", () => {
     const out = renderHTML(loc, [sunnyDay]);
     expect(out).toContain('class="temp-unit">°C');
