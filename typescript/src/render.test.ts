@@ -9,7 +9,6 @@ const loc: LocationInfo = {
   desa: "Kemayoran",
   lat: -6.1647,
   lon: 106.8454,
-  adm4: "31.71.03.1001",
 };
 
 // Times picked so day slots are 06:00-17:59, night 18:00-05:59
@@ -63,11 +62,25 @@ describe("renderTerminal", () => {
 });
 
 describe("renderHTML", () => {
-  it("uses weather emoji keyed by real BMKG codes", () => {
+  it("renders rain code 61 with colored ASCII art (regression: was sun)", () => {
     const out = renderHTML(loc, [rainySlot]);
-    expect(out).toContain("🌧️");       // 61 day → rain emoji
-    expect(out).not.toContain("☀️");    // must not fall back to sun
-    expect(out).toContain("Hujan Ringan");
+    expect(out).toContain("(___(__)");        // rain cloud art
+    expect(out).toContain("ac-111");          // light-blue drops
+    expect(out).not.toContain("\\ . /");    // no sun rays
+    expect(out).toContain("Hujan Ringan");    // condition from API
+  });
+
+  it("renders sunny hero art with xterm-226 color", () => {
+    const out = renderHTML(loc, [sunnyDay]);
+    expect(out).toContain("\\ . /");         // hero sun art
+    expect(out).toContain("ac-226");          // yellow
+  });
+
+  it("renders thunderstorm 95 with lightning bolt in art", () => {
+    const out = renderHTML(loc, [stormSlot]);
+    expect(out).toContain("\u26A1");         // ⚡
+    expect(out).toContain("ac-33");           // blue rain
+    expect(out).toContain("Hujan Petir");
   });
 
   it("keeps single °C unit in current-temp", () => {
@@ -75,11 +88,5 @@ describe("renderHTML", () => {
     expect(out).toContain('class="temp-unit">°C');
     // temp-value must be the bare number (no °C inside)
     expect(out).toMatch(/class="temp-value[^"]*">\+31</);
-  });
-
-  it("shows storm emoji for 95 and condition from API", () => {
-    const out = renderHTML(loc, [stormSlot]);
-    expect(out).toContain("⛈️");
-    expect(out).toContain("Hujan Petir");
   });
 });

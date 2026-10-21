@@ -389,39 +389,35 @@ export function renderTerminal(
   return lines.join("\n");
 }
 
-// Emoji weather icons for web view (ASCII art is for terminal only)
-// Keys match the real BMKG weather codes (0,1,2,3,4,5,10,45,60,61,63,80,95,97)
-function getWeatherEmoji(weatherCode: number, hour: number): string {
-  const isDay = hour >= 6 && hour < 18;
-  const icons: Record<number, { day: string; night: string }> = {
-    0:  { day: "☀️", night: "🌙" },   // Cerah
-    1:  { day: "🌤️", night: "🌙" },   // Cerah (mostly sunny)
-    2:  { day: "⛅", night: "☁️" },    // Cerah Berawan / partly cloudy
-    3:  { day: "☁️", night: "☁️" },    // Berawan
-    4:  { day: "🌥️", night: "☁️" },    // Berawan Tebal / overcast
-    5:  { day: "🌫️", night: "🌫️" },    // Udara Kabur / haze
-    10: { day: "🌫️", night: "🌫️" },    // Asap / smoke
-    45: { day: "🌫️", night: "🌫️" },    // Kabut / fog
-    60: { day: "🌦️", night: "🌧️" },   // Hujan Ringan / light rain
-    61: { day: "🌧️", night: "🌧️" },   // Hujan Sedang / rain
-    63: { day: "🌧️", night: "🌧️" },   // Hujan Lebat / heavy rain
-    80: { day: "🌧️", night: "🌧️" },   // Hujan Lokal / local showers
-    95: { day: "⛈️", night: "⛈️" },    // Hujan Petir / thunderstorm
-    97: { day: "⛈️", night: "⛈️" },    // Hujan Petir Lebat / heavy thunderstorm
-  };
-  const icon = icons[weatherCode] || icons[0];
-  return isDay ? icon.day : icon.night;
-}
-
-// Wind direction to emoji arrow
-function windEmoji(dir: string): string {
-  const arrows: Record<string, string> = {
-    "N": "⬆️", "NNE": "⬆️", "NE": "↗️", "ENE": "↗️",
-    "E": "➡️", "ESE": "↘️", "SE": "↘️", "SSE": "⬇️",
-    "S": "⬇️", "SSW": "⬇️", "SW": "↙️", "WSW": "↙️",
-    "W": "⬅️", "WNW": "↖️", "NW": "↖️", "NNW": "⬆️",
-  };
-  return arrows[dir] || "➡️";
+// ASCII icon as HTML: expand {sgr} tokens into colored <span>s (browser view)
+// Colors follow the xterm-256 palette: 226 yellow, 250/251 gray, 244 dark gray,
+// 33 blue, 111 light blue, 228 pale yellow. ";1" suffix -> bold.
+function asciiIconHtml(weatherCode: number, hour: number): string {
+  const icon = getAsciiIcon(weatherCode, hour);
+  return icon.map(line => {
+    let out = "";
+    let open = false;
+    let i = 0;
+    while (i < line.length) {
+      if (line[i] === "{") {
+        const end = line.indexOf("}", i);
+        if (end === -1) { out += line[i]; i++; continue; }
+        const content = line.slice(i + 1, end);
+        const m = content.match(/^38;5;(\d+)(;1)?$/);
+        if (m) {
+          if (open) out += "</span>";
+          out += `<span class="ac-${m[1]}${m[2] ? " ac-bold" : ""}">`;
+          open = true;
+        }
+        i = end + 1;
+      } else {
+        out += line[i];
+        i++;
+      }
+    }
+    if (open) out += "</span>";
+    return out || "&nbsp;";
+  }).join("\n");
 }
 
 // Render HTML for browser - Modern styled weather page
@@ -463,7 +459,7 @@ export function renderHTML(
         cloudCover: f.cloudCover,
         rainProb: f.rainProb,
         weatherCode: f.weather || 0,
-        emoji: getWeatherEmoji(f.weather || 0, hour),
+        art: asciiIconHtml(f.weather || 0, hour),
         isDay: hour >= 6 && hour < 18
       };
     });
@@ -545,6 +541,14 @@ export function renderHTML(
         --green: #40a02b;
         --border: #ccd0da;
       }
+      /* darken art colors for light bg readability */
+      .ac-226 { color: #b8860b; }
+      .ac-228 { color: #a08000; }
+      .ac-250 { color: #6c7086; }
+      .ac-251 { color: #7c819c; }
+      .ac-244 { color: #5b5f73; }
+      .ac-33 { color: #005f87; }
+      .ac-111 { color: #3a5fa3; }
     }
     
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -581,11 +585,13 @@ export function renderHTML(
       margin-bottom: 8px;
     }
     
-    .location-icon {
-      font-size: 48px;
-      line-height: 1;
-      filter: drop-shadow(0 4px 12px rgba(0,0,0,0.3));
-      animation: float 3s ease-in-out infinite;
+    .location-icon.ascii-art {
+      font-family: inherit;
+      font-size: 16px;
+      line-height: 1.25;
+      margin: 2px 14px 0 0;
+      flex-shrink: 0;
+      filter: drop-shadow(0 2px 6px rgba(0,0,0,0.25));
     }
     
     @keyframes float {
@@ -758,55 +764,70 @@ export function renderHTML(
     .day-label { font-weight: 700; font-size: 14px; }
     .day-date { color: var(--fg-muted); font-size: 12px; }
     
-    .slots-container { padding: 12px 16px; }
+    /* ASCII art colors (xterm-256) */
+    .ac-226 { color: #ffff00; } .ac-228 { color: #ffff87; }
+    .ac-250 { color: #bcbcbc; } .ac-251 { color: #c6c6c6; }
+    .ac-244 { color: #808080; } .ac-33 { color: #0087ff; }
+    .ac-111 { color: #87afff; }
+    .ac-bold { font-weight: 700; }
     
-    .slot-row {
+    /* Forecast slots: horizontal columns, one per time slot */
+    .slots-grid {
       display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 8px;
-      margin: 0 -8px;
-      border-bottom: 1px solid var(--border);
-      border-radius: 8px;
+      gap: 4px;
+      padding: 14px 12px;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    
+    .slot-col {
+      flex: 0 0 auto;
+      min-width: 100px;
+      text-align: center;
+      padding: 8px 4px;
+      border-radius: 10px;
       transition: background 0.2s;
     }
     
-    .slot-row:last-child { border-bottom: none; }
-    
-    .slot-row:hover { background: var(--border); border-radius: 8px; }
+    .slot-col:hover { background: var(--border); }
     
     .slot-time {
-      font-family: monospace;
-      font-size: 13px;
-      font-weight: 600;
+      font-size: 12px;
+      font-weight: 700;
       color: var(--accent);
-      width: 52px;
-      flex-shrink: 0;
+      margin-bottom: 6px;
     }
     
-    .slot-icon {
-      font-size: 26px;
-      line-height: 1;
-      min-width: 32px;
-      text-align: center;
+    .slot-art {
+      font-family: inherit;
+      font-size: 12px;
+      line-height: 1.3;
+      margin: 0 0 6px;
+      white-space: pre;
     }
-    
-    .slot-info { flex: 1; min-width: 0; }
-    
-    .slot-condition { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    
-    .slot-details { display: flex; flex-wrap: wrap; gap: 8px 12px; margin-top: 6px; font-size: 11px; color: var(--fg-muted); }
-    .detail { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
-    .detail-emoji { font-size: 12px; line-height: 1; filter: saturate(1.2); }
     
     .slot-temp {
-      font-family: monospace;
       font-size: 15px;
       font-weight: 700;
       font-variant-numeric: tabular-nums;
+    }
+    
+    .slot-condition {
+      font-size: 11px;
       color: var(--fg);
-      flex-shrink: 0;
-      margin-left: auto;
+      margin-top: 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    
+    .slot-meta {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2px 4px;
+      margin-top: 6px;
+      font-size: 10px;
+      color: var(--fg-muted);
     }
     
     /* Temp color classes */
@@ -835,15 +856,14 @@ export function renderHTML(
     @media (max-width: 600px) {
       body { padding: 16px 12px; font-size: 13px; }
       .location-name { font-size: 22px; }
-      .location-icon { font-size: 36px; }
+      .location-icon.ascii-art { font-size: 13px; margin-right: 10px; }
       .temp-value { font-size: 44px; }
       .temp-detail { margin-left: 12px; padding-left: 12px; }
       .detail-row { font-size: 12px; }
       .forecast-grid { grid-template-columns: 1fr; }
-      .slot-row { gap: 8px; padding: 8px 4px; margin: 0 -4px; }
-      .slot-time { font-size: 12px; width: 46px; }
-      .slot-icon { font-size: 22px; min-width: 28px; }
-      .slot-details { gap: 6px 10px; font-size: 10px; }
+      .slots-grid { padding: 10px 8px; }
+      .slot-col { min-width: 92px; }
+      .slot-art { font-size: 11px; }
       .slot-temp { font-size: 14px; }
     }
     
@@ -869,7 +889,7 @@ export function renderHTML(
   <div class="container">
     <header>
       <div class="location-header">
-        <div class="location-icon" aria-hidden="true">${getWeatherEmoji(current.weather || 0, currentHour)}</div>
+        <pre class="location-icon ascii-art" aria-hidden="true">${asciiIconHtml(current.weather || 0, currentHour)}</pre>
         <div class="location-info">
           <h1 class="location-name">${location.desa}</h1>
           <div class="location-meta">
@@ -911,21 +931,19 @@ export function renderHTML(
             <span class="day-label">${day.dayLabel}</span>
             <span class="day-date">${day.date}</span>
           </div>
-          <div class="slots-container">
+          <div class="slots-grid">
             ${day.slots.map(slot => `
-            <div class="slot-row">
-              <span class="slot-time">${slot.timeStr}</span>
-              <span class="slot-icon" aria-hidden="true">${slot.emoji}</span>
-              <div class="slot-info">
-                <div class="slot-condition">${slot.condition}</div>
-                <div class="slot-details">
-                  <span class="detail"><span class="detail-emoji">💧</span>${slot.humidity}%</span>
-                  <span class="detail"><span class="detail-emoji">${windEmoji(slot.windDir)}</span>${slot.windSpeed.toFixed(1)} km/h</span>
-                  <span class="detail"><span class="detail-emoji">☁️</span>${slot.cloudCover}%</span>
-                  <span class="detail"><span class="detail-emoji">🌧️</span>${slot.rainProb}%</span>
-                </div>
+            <div class="slot-col">
+              <div class="slot-time">${slot.timeStr}</div>
+              <pre class="slot-art" aria-hidden="true">${slot.art}</pre>
+              <div class="slot-temp ${getTempClass(slot.temp)}">${formatTemp(slot.temp)}</div>
+              <div class="slot-condition" title="${slot.condition}">${slot.condition}</div>
+              <div class="slot-meta">
+                <span>💧${slot.humidity}%</span>
+                <span>☁${slot.cloudCover}%</span>
+                <span>${windArrow(slot.windDir)}${slot.windSpeed.toFixed(1)}</span>
+                <span>🌧${slot.rainProb}%</span>
               </div>
-              <span class="slot-temp ${getTempClass(slot.temp)}">${formatTemp(slot.temp)}</span>
             </div>`).join("")}
           </div>
         </article>`).join("")}

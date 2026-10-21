@@ -14,11 +14,11 @@ Layout wireframe for `renderHTML()` in `src/render.ts` — helps identify each p
 │ │                                                                  │   │
 │ │   ┌─────────┐   ┌─────────────────────────────────────────────┐   │   │
 │ │   │ [1b]    │   │ [1c] LOCATION-INFO            (flex:1)       │   │   │
-│ │   │ ICON    │   │                                              │   │   │
-│ │   │  ☀️    │   │  [1d] LOCATION-NAME (h1, gradient text)      │   │   │
-│ │   │ 48px   │   │        "Kemayoran"                           │   │   │
-│ │   │ float  │   │                                              │   │   │
-│ │   │ anim   │   │  [1e] LOCATION-META (flex-wrap row)          │   │   │
+│ │   │ ASCII  │   │                                              │   │   │
+│ │   │ ART    │   │  [1d] LOCATION-NAME (h1, gradient text)      │   │   │
+│ │   │ 5-line │   │        "Kemayoran"                           │   │   │
+│ │   │ pre    │   │                                              │   │   │
+│ │   │ colored│   │  [1e] LOCATION-META (flex-wrap row)          │   │   │
 │ │   └─────────┘   │  "Kemayoran, Kota Adm. Jakarta Pusat        │   │   │
 │ │                 │   • DKI Jakarta                              │   │   │
 │ │                 │   • -6.1647, 106.8454"                      │   │   │
@@ -83,38 +83,47 @@ Layout wireframe for `renderHTML()` in `src/render.ts` — helps identify each p
 
 ---
 
-## [3d] SLOT-ROW Detail (the forecast line item)
+## [3d] SLOTS-GRID + SLOT-COL Detail (wttr.in-style columns)
+
+Each day card's slots are a **horizontal, scrollable row of columns** —
+one column per BMKG 3-hour slot, each with its own mini ASCII art.
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│  [a]        [b]         [c] SLOT-INFO (flex:1)             [f]       │
-│  TIME       ICON          [c1] CONDITION                TEMP         │
-│  (52px,     (32px,                                        (right,     │
-│  fixed)     fixed)                                         auto)      │
-│                                                                      │
-│  ┌─────┐   ┌─────┐   ┌──────────────────────────┐    ┌─────────┐    │
-│  │     │   │     │   │ Cerah Berawan  [c1]      │    │ +32°C   │    │
-│  │ 13:00    ☀️     │ ◀─┤                          ├──▶ │ (bold,  │    │
-│  │  [a]  │  [b]    │   │ [c2] SLOT-DETAILS:       │    │ colored)│    │
-│  │ accent │ emoji   │   │  💧 56%  ↖️ 13.0 km/h   │    │  [f]    │    │
-│  │ color  │         │   │  ☁️ 41%  🌧️ 30%         │    └─────────┘    │
-│  │        │         │   └──────────────────────────┘                   │
-│  └─────┘   └─────┘                                                      │
-│                                                                      │
-│  gap:10px ───────────── flex row, align center ──────────── gap:10px │
-└──────────────────────────────────────────────────────────────────────┘
+┌─ [3b] DAY-CARD ────────────────────────────────────────────────────┐
+│ [3c] Today                                    Wed, Oct 21          │
+│ ┌─ [3d] slots-grid (flex, overflow-x, gap:4px) ───────────────────┐ │
+│ │ ┌─ slot-col ─┐ ┌─ slot-col ─┐ ┌─ slot-col ─┐ ┌─ slot-col ─┐   │ │
+│ │ │ [a] 13:00  │ │    16:00    │ │    19:00   │ │    22:00   │   │ │
+│ │ │            │ │             │ │            │ │            │   │ │
+│ │ │ [b] ART    │ │ \ . /       │ │ \__/       │ │    *       │   │ │
+│ │ │  \ . /    │ │ - .-. -      │ │ __/  .-.   │ │  .--.  *   │   │ │
+│ │ │  - .-. -  │ │ ‒ (   ) ‒    │ │   \_(   ). │ │ (    )     │   │ │
+│ │ │  ‒ (   ) ‒ │ │ . `-᾿ .     │ │   /(___(__)│ │  `--'   *   │   │ │
+│ │ │  / ' \    │ │             │ │            │ │            │   │ │
+│ │ │ [c] +32°C │ │   +33°C     │ │   +30°C    │ │   +29°C     │   │ │
+│ │ │ [d] Cerah │ │ Cerah Berawan│ │ Cerah Ber. │ │ Cerah      │   │ │
+│ │ │ [e] 💧60% │ │   💧57%      │ │   💧64%    │ │   💰72%     │   │ │
+│ │ │     ☁20% │ │     ☁71%     │ │     ☁37%   │ │     ☁2%     │   │ │
+│ │ │     ↗7.2 │ │     ↖13.5    │ │     ↖4.8   │ │     ←1.0    │   │ │
+│ │ │     🌧10% │ │     🌧30%     │ │     🌧0%   │ │     🌧0%     │   │ │
+│ │ └───────────┘ └─────────────┘ └────────────┘ └────────────┘   │ │
+│ └────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Slot-row column breakdown
+### Slot-col breakdown
 
-| Part | Element | Width | Content |
-|------|---------|-------|---------|
-| `[a]` slot-time | `<span>` | 52px fixed | `13:00` (accent color, mono) |
-| `[b]` slot-icon | `<span>` | 32px fixed | ☀️ emoji (weather code + day/night) |
-| `[c]` slot-info | `<div>` | flex:1 (fills) | condition + details |
-| `[c1]` slot-condition | `<div>` | full | "Cerah Berawan" (500 weight) |
-| `[c2]` slot-details | `<div>` | flex-wrap | 💧 humidity, ↖️ wind, ☁️ cloud, 🌧️ rain |
-| `[f]` slot-temp | `<span>` | shrink:0, right | `+32°C` (bold, temp-class color) |
+| Part | Element | Content |
+|------|---------|---------|
+| `[a]` slot-time | `<div>` | `13:00` (accent color) |
+| `[b]` slot-art | `<pre>` | 5-line colored ASCII art (`ac-NNN` spans, 12px mono) |
+| `[c]` slot-temp | `<div>` | `+32°C` (bold, temp-class color) |
+| `[d]` slot-condition | `<div>` | raw BMKG `weather_desc`, ellipsis on overflow |
+| `[e]` slot-meta | `<div>` grid 2×2 | 💧 humidity / ☁ cloud / ↗ wind / 🌧 rain |
+
+- `min-width: 100px`, `flex: 0 0 auto` → columns never squish; grid scrolls on narrow screens
+- Art colors (xterm-256): 226 sun · 250/251 cloud/fog · 244 heavy · 111/33 rain · 228 ⚡/moon
+- Light mode darkens the palette for readability (see CSS `@media (prefers-color-scheme: light)`)
 
 ---
 
@@ -134,14 +143,13 @@ Layout wireframe for `renderHTML()` in `src/render.ts` — helps identify each p
 ├───────────────────────────────┤
 │ [2] WARNINGS (if any)         │
 ├───────────────────────────────┤
-│ [3] FORECAST-GRID             │
-│   ┌───────────────────────┐  │  ← 1 column only
+│ [3] FORECAST-GRID (1 col)    │
+│   ┌───────────────────────┐  │
 │   │ Today     │ date      │  │
-│   │ ┌───────────────────┐ │  │
-│   │ │ 13:00 ☀️  +32°C   │ │  │  ← tighter gaps
-│   │ │ Cerah Berawan     │ │  │
-│   │ │ 💧56% ↖️13.0 ...  │ │  │
-│   │ └───────────────────┘ │  │
+│   │ [slots-grid scrolls →]│  │
+│   │ 13:00  16:00  19:00  │  │  ← horizontal scroll
+│   │  art   art    art    │  │
+│   │ +32°C +33°C +30°C    │  │
 │   └───────────────────────┘  │
 │   ┌───────────────────────┐  │
 │   │ Tomorrow │ date       │  │
@@ -159,7 +167,7 @@ Layout wireframe for `renderHTML()` in `src/render.ts` — helps identify each p
 |---------|---------|
 | **1. Header** | `header`, `.location-header`, `.location-icon`, `.location-info`, `.location-name`, `.location-meta`, `.current-condition`, `.current-temp`, `.temp-value` (number only), `.temp-unit` (°C, 20px), `.temp-detail`, `.detail-row`, `.detail-icon`, `.detail-label`, `.detail-value` |
 | **2. Warnings** | `.warnings-section`, `.warnings-title`, `.warning-card` (+ `.extreme` `.severe` `.moderate` `.minor`), `.warning-header`, `.warning-icon`, `.warning-event`, `.warning-severity`, `.warning-area`, `.warning-time`, `.warning-desc` |
-| **3. Forecast** | `.forecast-section`, `.forecast-grid`, `.day-card`, `.day-header`, `.day-label`, `.day-date`, `.slots-container`, `.slot-row`, `.slot-time`, `.slot-icon`, `.slot-info`, `.slot-condition`, `.slot-details`, `.detail`, `.detail-emoji`, `.slot-temp` |
+| **3. Forecast** | `.forecast-section`, `.forecast-grid`, `.day-card`, `.day-header`, `.day-label`, `.day-date`, `.slots-grid`, `.slot-col`, `.slot-time`, `.slot-art`, `.slot-temp`, `.slot-condition`, `.slot-meta`, `.ascii-art`, `.ac-226/250/251/244/33/111/228`, `.ac-bold` |
 | **4. Footer** | `footer`, `.footer-links` |
 
 ### Shared state classes
@@ -184,12 +192,14 @@ BMKG JSON ──▶ fetchForecast() ──▶ SimpleForecast[]
                                      │           (cuaca-rs icons, expandColorTokens)
                                      │
                                      └─▶ renderHTML()       → styled page
-                                            ├─ getWeatherEmoji()  → ☀️ 🌧️ (web)
-                                            ├─ windEmoji()        → ⬆️ ↗️ (web)
+                                            ├─ asciiIconHtml()  → 5-line art as
+                                            │     colored <span>s (hero + slots)
+                                            ├─ windArrow()        → ↑ ↗ → (web meta)
                                             └─ getTempClass()      → color classes
 
 ASCII icon codes (real BMKG):
   0,1 sun/moon · 2 partly · 3 cloudy · 4 heavy cloud · 5,10,45 fog
   60,61 light rain · 63,80 heavy rain · 95,97 thunder (⚡)
   day/night only affects: clear sky (sun vs moon) + emoji
+  (web renders the same art via asciiIconHtml: tokens → <span class=ac-NNN>)
 ```
