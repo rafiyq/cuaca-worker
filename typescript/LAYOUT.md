@@ -178,12 +178,18 @@ Layout wireframe for `renderHTML()` in `src/render.ts` — helps identify each p
 
 ```
 BMKG JSON ──▶ fetchForecast() ──▶ SimpleForecast[]
-                                     │
+                                     │        (condition = raw weather_desc)
                                      ├─▶ renderTerminal()  → ANSI (curl)
-                                     │      └─ ASCII_ICONS (day/night)
+                                     │      └─ asciiArt() → 5-line 256-color art
+                                     │           (cuaca-rs icons, expandColorTokens)
                                      │
                                      └─▶ renderHTML()       → styled page
                                             ├─ getWeatherEmoji()  → ☀️ 🌧️ (web)
                                             ├─ windEmoji()        → ⬆️ ↗️ (web)
                                             └─ getTempClass()      → color classes
+
+ASCII icon codes (real BMKG):
+  0,1 sun/moon · 2 partly · 3 cloudy · 4 heavy cloud · 5,10,45 fog
+  60,61 light rain · 63,80 heavy rain · 95,97 thunder (⚡)
+  day/night only affects: clear sky (sun vs moon) + emoji
 ```

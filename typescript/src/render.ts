@@ -38,77 +38,143 @@ export interface Warning {
   geocode?: Record<string, string>;
 }
 
-// Weather code to multi-line ASCII art (3 lines, fixed 14-char width)
-const ASCII_ICONS: Record<number, { day: string[]; night: string[] }> = {
-  0: {  // Cerah / Sunny
-    day: ["     .--.     ", "    /    \\    ", "   '      '   "], 
-    night: ["     `--'     ", "    \\    /    ", "   '      '   "]
-  },
-  1: {  // Cerah Berawan / Partly cloudy
-    day: ["     .--.     ", "   .'  '.    ", "  '      '   "], 
-    night: ["     `--'     ", "   .'  '.    ", "  '      '   "]
-  },
-  2: {  // Berawan / Cloudy
-    day: ["    .--.      ", "   /    \\     ", "  '      '   "], 
-    night: ["    .--.      ", "   /    \\     ", "  '      '   "]
-  },
-  3: {  // Berawan / Overcast
-    day: ["    .--.      ", "   /    \\     ", "  '      '   "], 
-    night: ["    .--.      ", "   /    \\     ", "  '      '   "]
-  },
-  4: {  // Berawan Tebal / Overcast
-    day: ["    .--.      ", "   /    \\     ", "  '      '   "], 
-    night: ["    .--.      ", "   /    \\     ", "  '      '   "]
-  },
-  5: {  // Kabut / Fog
-    day: ["   _ - _ - _  ", "  _ - _ - _  ", "   _ - _ - _  "], 
-    night: ["   _ - _ - _  ", "  _ - _ - _  ", "   _ - _ - _  "]
-  },
-  10: {  // Hujan Ringan / Light rain
-    day: ["     .--.     ", "  .'    '.    ", " '  |  | '  "], 
-    night: ["     `--'     ", "  .'    '.    ", " '  |  | '  "]
-  },
-  11: {  // Hujan / Rain
-    day: ["     .--.     ", "  .'    '.    ", " '  |  | '  "], 
-    night: ["     `--'     ", "  .'    '.    ", " '  |  | '  "]
-  },
-  12: {  // Hujan Lebat / Heavy rain
-    day: ["     .--.     ", "  .'    '.    ", " '  || || '  "], 
-    night: ["     `--'     ", "  .'    '.    ", " '  || || '  "]
-  },
-  13: {  // Hujan Petir / Thunderstorm
-    day: ["     .--.     ", "  .' /\\ '.    ", " '  /  \\ '  "], 
-    night: ["     `--'     ", "  .' /\\ '.    ", " '  /  \\ '  "]
-  },
-  14: {  // Hujan Petir Lebat / Heavy thunderstorm
-    day: ["     .--.     ", "  .' /\\ '.    ", " '  /  \\ '  "], 
-    night: ["     `--'     ", "  .' /\\ '.    ", " '  /  \\ '  "]
-  },
-};
+// 5-line ASCII art with 256-color tokens, ported from cuaca-rs (icons.rs)
+// Token format: {38;5;NNN} or {38;5;NNN;1} expanded to ANSI by expandColorTokens()
+// All art is 13 chars wide. Codes match the real BMKG weather codes.
+
+const ICON_SUNNY = [
+  "{38;5;226}    \\ . /    ",
+  "{38;5;226}   - .-. -   ",
+  "{38;5;226}  ‒ (   ) ‒  ",
+  "{38;5;226}   . `-᾿ .   ",
+  "{38;5;226}    / ' \\    ",
+];
+
+const ICON_NIGHT_CLEAR = [
+  "{38;5;228}    *        ",
+  "{38;5;228}  .--.  *    ",
+  "{38;5;228} (    )      ",
+  "{38;5;228}  `--'   *   ",
+  "{38;5;228}       *     ",
+];
+
+const ICON_PARTLY_CLOUDY = [
+  "{38;5;226}   \\__/      ",
+  "{38;5;226} __/  {38;5;250}.-.    ",
+  "{38;5;226}   \\_{38;5;250}(   ).  ",
+  "{38;5;226}   /{38;5;250}(___(__) ",
+  "             ",
+];
+
+const ICON_CLOUDY = [
+  "             ",
+  "{38;5;250}     .--.    ",
+  "{38;5;250}  .-(    ).  ",
+  "{38;5;250} (___.__)__) ",
+  "             ",
+];
+
+const ICON_VERY_CLOUDY = [
+  "             ",
+  "{38;5;244;1}     .--.    ",
+  "{38;5;244;1}  .-(    ).  ",
+  "{38;5;244;1} (___.__)__) ",
+  "             ",
+];
+
+const ICON_FOG = [
+  "             ",
+  "{38;5;251} _ - _ - _ - ",
+  "{38;5;251}  _ - _ - _  ",
+  "{38;5;251} _ - _ - _ - ",
+  "             ",
+];
+
+const ICON_LIGHT_RAIN = [
+  "{38;5;250}     .-.     ",
+  "{38;5;250}    (   ).   ",
+  "{38;5;250}   (___(__)  ",
+  "{38;5;111}    ʻ ʻ ʻ ʻ  ",
+  "{38;5;111}   ʻ ʻ ʻ ʻ   ",
+];
+
+const ICON_HEAVY_RAIN = [
+  "{38;5;244;1}     .-.     ",
+  "{38;5;244;1}    (   ).   ",
+  "{38;5;244;1}   (___(__)  ",
+  "{38;5;33;1}  ‚ʻ‚ʻ‚ʻ‚ʻ   ",
+  "{38;5;33;1}  ‚ʻ‚ʻ‚ʻ‚ʻ   ",
+];
+
+const ICON_THUNDERSTORM = [
+  "{38;5;244;1}     .-.     ",
+  "{38;5;244;1}    (   ).   ",
+  "{38;5;244;1}   (___(__)  ",
+  "{38;5;33;1}  ‚ʻ{38;5;228;1}⚡{38;5;33;1}ʻ‚{38;5;228;1}⚡{38;5;33;1}‚ʻ   ",
+  "{38;5;33;1}  ‚ʻ‚ʻ{38;5;228;1}⚡{38;5;33;1}ʻ‚ʻ   ",
+];
+
+const ICON_UNKNOWN = [
+  "    .-.      ",
+  "     __)     ",
+  "    (        ",
+  "     `-᾿     ",
+  "      •      ",
+];
+
+// BMKG weather code -> ASCII art (mapping from cuaca-rs ascii_icon())
+function asciiArt(weatherCode: number, isDay: boolean): string[] {
+  const icon = (() => {
+    switch (weatherCode) {
+      case 0:
+      case 1: return isDay ? ICON_SUNNY : ICON_NIGHT_CLEAR;
+      case 2: return ICON_PARTLY_CLOUDY;
+      case 3: return ICON_CLOUDY;
+      case 4: return ICON_VERY_CLOUDY;
+      case 5:
+      case 10:
+      case 45: return ICON_FOG;
+      case 60:
+      case 61: return ICON_LIGHT_RAIN;
+      case 63:
+      case 80: return ICON_HEAVY_RAIN;
+      case 95:
+      case 97: return ICON_THUNDERSTORM;
+      default: return ICON_UNKNOWN;
+    }
+  })();
+  return icon;
+}
 
 function getAsciiIcon(weatherCode: number, hour: number): string[] {
   const isDay = hour >= 6 && hour < 18;
-  const icon = ASCII_ICONS[weatherCode] || ASCII_ICONS[0];
-  return isDay ? icon.day : icon.night;
+  return asciiArt(weatherCode, isDay);
 }
 
-function getIconLabel(weatherCode: number, hour: number): string {
-  const isDay = hour >= 6 && hour < 18;
-  const labels: Record<number, { day: string; night: string }> = {
-    0: { day: "Cerah", night: "Cerah" },
-    1: { day: "Cerah Berawan", night: "Cerah Berawan" },
-    2: { day: "Berawan", night: "Berawan" },
-    3: { day: "Berawan", night: "Berawan" },
-    4: { day: "Berawan Tebal", night: "Berawan Tebal" },
-    5: { day: "Kabut", night: "Kabut" },
-    10: { day: "Hujan Ringan", night: "Hujan Ringan" },
-    11: { day: "Hujan", night: "Hujan" },
-    12: { day: "Hujan Lebat", night: "Hujan Lebat" },
-    13: { day: "Hujan Petir", night: "Hujan Petir" },
-    14: { day: "Hujan Petir Lebat", night: "Hujan Petir Lebat" },
-  };
-  const label = labels[weatherCode] || labels[0];
-  return isDay ? label.day : label.night;
+// Expand {sgr} color tokens to ANSI escapes; strips tokens when colors are off.
+// Ported from cuaca-rs color.rs expand_color_tokens().
+function expandColorTokens(s: string): string {
+  let out = "";
+  let inColor = false;
+  let i = 0;
+  while (i < s.length) {
+    if (s[i] === "{") {
+      const end = s.indexOf("}", i);
+      if (end === -1) { out += s[i]; i++; continue; }
+      const content = s.slice(i + 1, end);
+      if (/^[0-9;]+$/.test(content)) {
+        if (inColor) out += "\x1b[0m";
+        out += `\x1b[${content}m`;
+        inColor = true;
+      }
+      i = end + 1;
+    } else {
+      out += s[i];
+      i++;
+    }
+  }
+  if (inColor) out += ANSI.reset;
+  return out;
 }
 
 // Wind direction to arrow
@@ -210,16 +276,16 @@ export function renderTerminal(
   lines.push(`${ANSI.bold}Weather report: ${location.desa}, ${location.kecamatan}${ANSI.reset}`);
   lines.push("");
   
-  // Current conditions (first forecast item)
+  // Current conditions (first forecast item) — real 5-line icon
   const current = forecast[0];
   const currentHour = new Date(current.time).getHours();
-  const currentIcon = getAsciiIcon(current.weather || 0, currentHour);
+  const currentIcon = getAsciiIcon(current.weather || 0, currentHour).map(expandColorTokens);
   
-  lines.push(`     ${currentIcon[0]}       ${current.condition}`);
-  lines.push(`      __)      ${ansiTemp(current.temp)}`);
-  lines.push(`     (         ${formatWind(current.windSpeed, current.windDir)}`);
-  lines.push(`      \`-’      ${current.humidity}% humidity`);
-  lines.push(`       •       ${current.rainProb}% rain`);
+  lines.push(`    ${currentIcon[0]}    ${current.condition}`);
+  lines.push(`    ${currentIcon[1]}    ${ansiTemp(current.temp)}`);
+  lines.push(`    ${currentIcon[2]}    ${formatWind(current.windSpeed, current.windDir)}`);
+  lines.push(`    ${currentIcon[3]}    ${current.humidity}% humidity`);
+  lines.push(`    ${currentIcon[4]}    ${current.rainProb}% rain`);
   lines.push("");
   
   // Weather Warnings
@@ -258,9 +324,7 @@ export function renderTerminal(
       forecast: f
     }));
     
-    const ICON_W = 14;
-    const DATA_W = 14;
-    const cellW = ICON_W + DATA_W; // 28 total
+    const cellW = 30;
     const n = slots.length;
     
     // Top border with day header
@@ -284,22 +348,19 @@ export function renderTerminal(
     }
     lines.push(sep);
     
-    // Build each column: 5 rows, icon on LEFT of each row
+    // Build each column: 5 rows, one real icon line + data per row
     const colBlocks: string[][] = [];
     for (const s of slots) {
       const f = s.forecast;
       const hour = s.hour;
-      const icon = getAsciiIcon(f.weather || 0, hour);
-      const label = getIconLabel(f.weather || 0, hour);
+      const icon = getAsciiIcon(f.weather || 0, hour).map(expandColorTokens);
       
-      // 5 data rows, icon on LEFT of each
-      const emptyIcon = " ".repeat(14);
       colBlocks.push([
-        padCell(` ${icon[0]} ` + ` ${label} `, 28),
-        padCell(` ${icon[1]} ` + ` ${ansiTemp(f.temp)} `, 28),
-        padCell(` ${icon[2]} ` + ` ${formatWind(f.windSpeed, f.windDir)} `, 28),
-        padCell(` ${emptyIcon} ` + ` ${f.cloudCover}% cloud `, 28),
-        padCell(` ${emptyIcon} ` + ` R${f.rainProb}% H${f.humidity}% `, 28),
+        padCell(` ${icon[0]} ` + ` ${f.condition} `, cellW),
+        padCell(` ${icon[1]} ` + ` ${ansiTemp(f.temp)} `, cellW),
+        padCell(` ${icon[2]} ` + ` ${formatWind(f.windSpeed, f.windDir)} `, cellW),
+        padCell(` ${icon[3]} ` + ` ${f.cloudCover}% cloud R${f.rainProb}% `, cellW),
+        padCell(` ${icon[4]} ` + ` ${f.humidity}% humidity `, cellW),
       ]);
     }
     
@@ -329,20 +390,24 @@ export function renderTerminal(
 }
 
 // Emoji weather icons for web view (ASCII art is for terminal only)
+// Keys match the real BMKG weather codes (0,1,2,3,4,5,10,45,60,61,63,80,95,97)
 function getWeatherEmoji(weatherCode: number, hour: number): string {
   const isDay = hour >= 6 && hour < 18;
   const icons: Record<number, { day: string; night: string }> = {
-    0: { day: "☀️", night: "🌙" },          // Cerah / Sunny
-    1: { day: "🌤️", night: "🌙" },          // Cerah Berawan / Partly cloudy
-    2: { day: "⛅", night: "☁️" },           // Berawan / Cloudy
-    3: { day: "☁️", night: "☁️" },           // Berawan Tebal / Overcast
-    4: { day: "☁️", night: "☁️" },           // Berawan Tebal / Overcast
-    5: { day: "🌫️", night: "🌫️" },           // Kabut / Fog
-    10: { day: "🌦️", night: "🌧️" },          // Hujan Ringan / Light rain
-    11: { day: "🌧️", night: "🌧️" },          // Hujan / Rain
-    12: { day: "🌧️", night: "🌧️" },          // Hujan Lebat / Heavy rain
-    13: { day: "⛈️", night: "⛈️" },          // Hujan Petir / Thunderstorm
-    14: { day: "⛈️", night: "⛈️" },          // Hujan Petir Lebat / Heavy thunderstorm
+    0:  { day: "☀️", night: "🌙" },   // Cerah
+    1:  { day: "🌤️", night: "🌙" },   // Cerah (mostly sunny)
+    2:  { day: "⛅", night: "☁️" },    // Cerah Berawan / partly cloudy
+    3:  { day: "☁️", night: "☁️" },    // Berawan
+    4:  { day: "🌥️", night: "☁️" },    // Berawan Tebal / overcast
+    5:  { day: "🌫️", night: "🌫️" },    // Udara Kabur / haze
+    10: { day: "🌫️", night: "🌫️" },    // Asap / smoke
+    45: { day: "🌫️", night: "🌫️" },    // Kabut / fog
+    60: { day: "🌦️", night: "🌧️" },   // Hujan Ringan / light rain
+    61: { day: "🌧️", night: "🌧️" },   // Hujan Sedang / rain
+    63: { day: "🌧️", night: "🌧️" },   // Hujan Lebat / heavy rain
+    80: { day: "🌧️", night: "🌧️" },   // Hujan Lokal / local showers
+    95: { day: "⛈️", night: "⛈️" },    // Hujan Petir / thunderstorm
+    97: { day: "⛈️", night: "⛈️" },    // Hujan Petir Lebat / heavy thunderstorm
   };
   const icon = icons[weatherCode] || icons[0];
   return isDay ? icon.day : icon.night;
@@ -387,13 +452,11 @@ export function renderHTML(
     const slots = sortedSlots.map(f => {
       const date = new Date(f.time);
       const hour = date.getHours();
-      const icon = getAsciiIcon(f.weather || 0, hour);
-      const label = getIconLabel(f.weather || 0, hour);
       return {
         hour,
         timeStr: `${hour.toString().padStart(2, "0")}:00`,
         temp: f.temp,
-        condition: label,
+        condition: f.condition, // raw BMKG weather_desc
         humidity: f.humidity,
         windSpeed: f.windSpeed,
         windDir: f.windDir,
@@ -409,7 +472,7 @@ export function renderHTML(
   }
   
   // Current conditions
-  const currentLabel = getIconLabel(current.weather || 0, currentHour);
+  const currentLabel = current.condition; // raw BMKG weather_desc
   
   // Warnings HTML
   const warningsHtml = warnings.length > 0
