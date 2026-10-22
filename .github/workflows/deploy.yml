@@ -2,8 +2,9 @@ name: deploy
 
 # Release deployment: push a version tag (v*) to deploy to production.
 # Runs the full test suite on the tagged commit first, then deploys the
-# TypeScript worker, stamping the Worker Version with the git tag.
-# Manual deploys (workflow_dispatch) skip the version stamp.
+# TypeScript worker with the wrangler version pinned in the lockfile
+# (the same one the test job validated), stamping the Worker Version
+# with the git tag. Manual runs (workflow_dispatch) skip the version stamp.
 
 on:
   push:
@@ -31,28 +32,28 @@ jobs:
   deploy:
     needs: test
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: typescript
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Verify Cloudflare secrets
         run: |
-          if [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
             echo "::error::CLOUDFLARE_API_TOKEN secret is not set — refusing to deploy a release."
             exit 1
           fi
-      - name: Compute release metadata
-        id: release
+      - run: npm ci
+      - name: Deploy Worker (stamp Worker Version with git tag)
         run: |
+          EXTRA=""
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            echo "extra=--tag ${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "extra=" >> "$GITHUB_OUTPUT"
+            EXTRA="--tag $GITHUB_REF_NAME"
           fi
-      - name: Deploy to Cloudflare Workers
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: typescript
-          # uses the wrangler version pinned in package-lock.json — the
-          # same one the test job just validated against
-          command: deploy ${{ steps.release.outputs.extra }}
+          npx wrangler deploy $EXTRA
