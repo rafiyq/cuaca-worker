@@ -42,6 +42,22 @@ Current profile (from `src/index.ts`):
 - Tests: Cache API works under vitest-pool-workers/miniflare; keep a bypass
   (`?nocache=1`) for deterministic tests if needed.
 
+## Production verification (v0.1.2, live)
+
+Anycast alternates requests between colos (e.g. SIN/CGK); within one colo
+both layers engage:
+
+```
+SIN  → MISS    upstream;dur=21ms   (fresh; warms edge cache)
+CGK  → MISS    upstream;dur=31ms   (fresh; warms isolate)
+CGK  → MEMHIT  cache;desc=MEM      (same isolate)
+SIN  → EDGEHIT cache;desc=EDGE     (same colo, different isolate)
+```
+
+Service binding: worker→api.wilayah.workers.dev same-zone subrequests
+bypass the target worker (Cloudflare same-zone behavior) and 404 —
+production calls go through the WILAYAH service binding instead.
+
 ## Expected result after 1–4
 
 | Path | Warm | Improvement |
