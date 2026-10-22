@@ -1,0 +1,14 @@
+# build artifacts
+typescript/node_modules/
+typescript/dist/
+rust/target/
+rust/dist/
+rust/build/
+
+# workers local state
+.wrangler/
+.dev.vars
+
+# OS/editor
+.DS_Store
+*.log

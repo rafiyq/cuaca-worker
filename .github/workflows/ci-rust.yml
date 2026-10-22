@@ -1,0 +1,23 @@
+name: rust
+
+on:
+  push:
+    branches: [main]
+    paths: ['rust/**', '.github/workflows/ci-rust.yml']
+  pull_request:
+    paths: ['rust/**', '.github/workflows/ci-rust.yml']
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      # Compiles cleanly; only the wasm-bindgen CLI step is blocked
+      # (see rust/TOOLCHAIN_ISSUES.md)
+      - run: cargo build --target wasm32-unknown-unknown --release
