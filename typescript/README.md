@@ -136,7 +136,7 @@ npm run dev
 `wrangler.jsonc`:
 ```jsonc
 {
-  "name": "cuaca-worker",
+  "name": "cuaca",
   "main": "src/index.ts",
   "compatibility_date": "2025-10-13",
   "compatibility_flags": ["nodejs_compat"],
@@ -166,15 +166,6 @@ npm test           # Run vitest tests
 npm run typecheck  # TypeScript check
 ```
 
-## Inspiration
-
-- **[rafiyq/cuaca](https://github.com/rafiyq/cuaca)** — Rust CLI for Waybar (custom formats, warnings, daemon)
-- **[rafiyq/wilayah-worker](https://github.com/rafiyq/wilayah-worker)** — Village lookup API on Cloudflare Workers (D1, GeoIP)
-
 ## License
 
 MIT — Weather data © [BMKG](https://bmkg.go.id), location data © [wilayah-worker](https://github.com/rafiyq/wilayah-worker)
-
----
-
-**Built for Indonesia** 🇮🇩 — `curl cuaca.workers.dev/Jakarta`
