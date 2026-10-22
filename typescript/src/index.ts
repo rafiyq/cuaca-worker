@@ -103,7 +103,7 @@ export default {
         return json({ error: "q parameter required" }, 400, corsHeaders);
       }
       try {
-        const results = await searchWilayah(q, limit);
+        const results = await searchWilayah(q, limit, env);
         return json({ query: q, results }, 200, corsHeaders);
       } catch (e) {
         return json({ error: "Failed to search", detail: String(e) }, 502, corsHeaders);
