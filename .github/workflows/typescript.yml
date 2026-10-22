@@ -1,0 +1,46 @@
+name: typescript
+
+on:
+  push:
+    branches: [main]
+    paths: ['typescript/**', '.github/workflows/typescript.yml']
+  pull_request:
+    paths: ['typescript/**', '.github/workflows/typescript.yml']
+  workflow_dispatch:
+
+# Serialize runs per ref: production deploys never overlap; PR test
+# runs of the same PR queue instead of racing.
+concurrency:
+  group: cuaca-worker-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm test
+
+  deploy:
+    needs: test
+    # Production deploys: main branch only, after tests pass, and only
+    # once the Cloudflare secrets exist. Skips (stays green) until then.
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request' &&
+      secrets.CLOUDFLARE_API_TOKEN != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: typescript
