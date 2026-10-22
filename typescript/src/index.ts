@@ -49,6 +49,7 @@ interface WilayahCodeResult {
 interface Env {
   AI?: unknown;
   ASSETS?: unknown;
+  WILAYAH?: { fetch(input: RequestInfo, init?: RequestInit): Promise<Response> };
 }
 
 import { renderTerminal, renderHTML, wantsHTML, SimpleForecast, LocationInfo, Warning, weatherEmoji, asciiIconSingle } from "./render";
@@ -118,7 +119,7 @@ export default {
         return json({ error: "lat and lon parameters required" }, 400, corsHeaders);
       }
       try {
-        const results = await nearestWilayah(lat, lon, limit);
+        const results = await nearestWilayah(lat, lon, limit, env);
         return json({ lat, lon, results }, 200, corsHeaders);
       } catch (e) {
         return json({ error: "Failed to reverse geocode", detail: String(e) }, 502, corsHeaders);
@@ -133,7 +134,7 @@ export default {
         return json({ error: "lat and lon parameters required" }, 400, corsHeaders);
       }
       try {
-        const result = await locateWilayah(lat, lon);
+        const result = await locateWilayah(lat, lon, env);
         return json(result, 200, corsHeaders);
       } catch (e) {
         return json({ error: "Failed to locate", detail: String(e) }, 502, corsHeaders);
@@ -147,8 +148,8 @@ export default {
 
     // GET / - Terminal weather (auto-location via GeoIP or default)
     if (url.pathname === "/" || url.pathname === "/weather") {
-      const adm4 = await resolveAdm4FromRequest(request, url);
       try {
+        const adm4 = await resolveAdm4FromRequest(request, env, url);
         return await serveWeatherView(request, ctx, adm4, url.searchParams.get("format"), corsHeaders);
       } catch (e) {
         return new Response(`Error: ${e}`, { status: 502, headers: corsHeaders });
@@ -158,8 +159,8 @@ export default {
     // GET /:location - Location by name/code with format support
     if (url.pathname.startsWith("/") && url.pathname.length > 1 && !url.pathname.startsWith("/api")) {
       const locationName = url.pathname.slice(1);
-      const adm4 = await resolveLocationCached(locationName) || "31.71.03.1001";
       try {
+        const adm4 = await resolveLocationCached(locationName, env) || "31.71.03.1001";
         return await serveWeatherView(request, ctx, adm4, url.searchParams.get("format"), corsHeaders);
       } catch (e) {
         return new Response(`Error: ${e}`, { status: 502, headers: corsHeaders });
@@ -343,21 +344,21 @@ function toLocationInfo(data: Awaited<ReturnType<typeof fetchForecast>>): Locati
 }
 
 // ===== Location resolution caches =====
-async function resolveLocationCached(name: string): Promise<string | null> {
+async function resolveLocationCached(name: string, env?: Env): Promise<string | null> {
   const key = `name:${name.toLowerCase()}`;
   const hit = resolveCache.get(key);
   if (hit && hit.expires > Date.now()) return hit.adm4;
-  const adm4 = await resolveLocation(name);
+  const adm4 = await resolveLocation(name, env);
   if (adm4) resolveCache.set(key, { expires: Date.now() + RESOLVE_TTL_MS, adm4 });
   return adm4;
 }
 
-async function nearestAdm4Cached(lat: number, lon: number): Promise<string | undefined> {
+async function nearestAdm4Cached(lat: number, lon: number, env?: Env): Promise<string | undefined> {
   // round to ~1 km: GeoIP coords jitter between requests but resolve nearby
   const key = `geo:${lat.toFixed(2)},${lon.toFixed(2)}`;
   const hit = resolveCache.get(key);
   if (hit && hit.expires > Date.now()) return hit.adm4;
-  const nearest = await nearestWilayah(lat, lon, 1);
+  const nearest = await nearestWilayah(lat, lon, 1, env);
   if (nearest.length > 0) {
     const adm4 = nearest[0].code;
     resolveCache.set(key, { expires: Date.now() + RESOLVE_TTL_MS, adm4 });
@@ -481,46 +482,64 @@ function parseCAPWarnings(xml: string): Array<any> {
 }
 
 // ===== Wilayah Worker Integration =====
-async function searchWilayah(query: string, limit: number): Promise<WilayahSearchResult[]> {
-  const res = await fetch(`${WILAYAH_API}/search?q=${encodeURIComponent(query)}&limit=${limit}`, {
-    headers: { "User-Agent": "cuaca-worker/1.0" },
-    cf: { cacheTtl: 86400, cacheEverything: true }, // 24h cache
-  });
+// Fetch through the WILAYAH service binding when available (same-account
+// worker-to-worker: bypasses same-zone routing, faster, free). Falls
+// back to public fetch -- local dev/CI have no live binding for 'api'.
+async function wilayahFetch(url: string, cf: Record<string, unknown>, env?: Env): Promise<Response> {
+  const headers = { "User-Agent": "cuaca-worker/1.0" };
+  if (env?.WILAYAH) {
+    try {
+      return await env.WILAYAH.fetch(url, { headers });
+    } catch {
+      // binding unavailable (local dev stub) -> public fetch
+    }
+  }
+  return fetch(url, { headers, cf: cf as RequestInit["cf"] });
+}
+async function searchWilayah(query: string, limit: number, env?: Env): Promise<WilayahSearchResult[]> {
+  const res = await wilayahFetch(
+    `${WILAYAH_API}/search?q=${encodeURIComponent(query)}&limit=${limit}`,
+    { cacheTtl: 86400, cacheEverything: true }, // 24h edge cache (public fetch path)
+    env
+  );
   if (!res.ok) throw new Error(`Wilayah ${res.status}`);
   const data = (await res.json()) as WilayahNearestResult;
   return data.results || [];
 }
 
-async function nearestWilayah(lat: number, lon: number, limit: number): Promise<WilayahSearchResult[]> {
-  const res = await fetch(`${WILAYAH_API}/nearest?lat=${lat}&lon=${lon}&limit=${limit}`, {
-    headers: { "User-Agent": "cuaca-worker/1.0" },
-    cf: { cacheTtl: 86400, cacheEverything: true },
-  });
+async function nearestWilayah(lat: number, lon: number, limit: number, env?: Env): Promise<WilayahSearchResult[]> {
+  const res = await wilayahFetch(
+    `${WILAYAH_API}/nearest?lat=${lat}&lon=${lon}&limit=${limit}`,
+    { cacheTtl: 86400, cacheEverything: true },
+    env
+  );
   if (!res.ok) throw new Error(`Wilayah ${res.status}`);
   const data = (await res.json()) as WilayahNearestResult;
   return data.results || [];
 }
 
-async function locateWilayah(lat: number, lon: number): Promise<any> {
-  const res = await fetch(`${WILAYAH_API}/locate?lat=${lat}&lon=${lon}`, {
-    headers: { "User-Agent": "cuaca-worker/1.0" },
-    cf: { cacheTtl: 86400, cacheEverything: true },
-  });
+async function locateWilayah(lat: number, lon: number, env?: Env): Promise<any> {
+  const res = await wilayahFetch(
+    `${WILAYAH_API}/locate?lat=${lat}&lon=${lon}`,
+    { cacheTtl: 86400, cacheEverything: true },
+    env
+  );
   if (!res.ok) throw new Error(`Wilayah ${res.status}`);
   return res.json();
 }
 
-async function getWilayahByCode(code: string): Promise<WilayahCodeResult | null> {
-  const res = await fetch(`${WILAYAH_API}/code?q=${encodeURIComponent(code)}`, {
-    headers: { "User-Agent": "cuaca-worker/1.0" },
-    cf: { cacheTtl: 86400, cacheEverything: true },
-  });
+async function getWilayahByCode(code: string, env?: Env): Promise<WilayahCodeResult | null> {
+  const res = await wilayahFetch(
+    `${WILAYAH_API}/code?q=${encodeURIComponent(code)}`,
+    { cacheTtl: 86400, cacheEverything: true },
+    env
+  );
   if (!res.ok) return null;
   return res.json();
 }
 
 // ===== Location Resolution =====
-async function resolveAdm4FromRequest(request: Request, url: URL): Promise<string> {
+async function resolveAdm4FromRequest(request: Request, env: Env, url: URL): Promise<string> {
   // 1. Explicit adm4 in query
   const explicitAdm4 = url.searchParams.get("adm4");
   if (explicitAdm4) return explicitAdm4;
@@ -545,15 +564,15 @@ async function resolveAdm4FromRequest(request: Request, url: URL): Promise<strin
   return "31.71.03.1001";
 }
 
-async function resolveLocation(name: string): Promise<string | null> {
+async function resolveLocation(name: string, env?: Env): Promise<string | null> {
   // Try exact code first
   if (/^\d{2}(\.\d{2}){3}$/.test(name)) {
-    const result = await getWilayahByCode(name);
+    const result = await getWilayahByCode(name, env);
     return result?.code || null;
   }
 
   // Search by name
-  const results = await searchWilayah(name, 1);
+  const results = await searchWilayah(name, 1, env);
   if (results.length > 0) return results[0].code;
 
   // Fallback to hardcoded map

@@ -3,5 +3,11 @@
   "name": "cuaca-worker",
   "main": "src/index.ts",
   "compatibility_date": "2025-10-13",
-  "compatibility_flags": ["nodejs_compat"]
+  "compatibility_flags": ["nodejs_compat"],
+  "services": [
+    {
+      "binding": "WILAYAH",
+      "service": "api"
+    }
+  ]
 }
