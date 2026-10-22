@@ -6,7 +6,7 @@ for location lookup. Runs on **Cloudflare Workers** — zero cold starts,
 zero dependencies, edge-cached.
 
 ```
-$ curl cuaca.workers.dev/Jakarta
+$ curl https://cuaca-worker.wilayah.workers.dev/Jakarta
 
 Weather report: Kemayoran, Kemayoran
 
@@ -49,16 +49,16 @@ rust/                # experimental workers-rs port
 
 ```bash
 # Terminal (curl)
-curl cuaca.workers.dev/                     # auto-locate via GeoIP
-curl cuaca.workers.dev/Jakarta              # by name
-curl cuaca.workers.dev/Jakarta?format=3     # one-liner: "Kemayoran: ☀️ +32°C"
-curl cuaca.workers.dev/Jakarta?format='{ICON} {t}°C {weather_desc}'   # Waybar
+curl https://cuaca-worker.wilayah.workers.dev/                     # auto-locate via GeoIP
+curl https://cuaca-worker.wilayah.workers.dev/Jakarta              # by name
+curl https://cuaca-worker.wilayah.workers.dev/Jakarta?format=3     # one-liner
+curl 'https://cuaca-worker.wilayah.workers.dev/Jakarta?format=%7BICON%7D+%7Bt%7D%C2%B0C'   # Waybar
 
 # Browser — styled page with colored ASCII art, warnings, 3-day forecast
 
 # JSON API
-curl cuaca.workers.dev/api/forecast?adm4=31.71.03.1001
-curl cuaca.workers.dev/api/resolve?q=jakarta&limit=5
+curl https://cuaca-worker.wilayah.workers.dev/api/forecast?adm4=31.71.03.1001
+curl https://cuaca-worker.wilayah.workers.dev/api/resolve?q=jakarta&limit=5
 ```
 
 Every response carries `X-Cuaca-Cache` (`MISS`/`MEMHIT`/`EDGEHIT`/`BYPASS`)
