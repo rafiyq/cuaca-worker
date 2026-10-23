@@ -675,6 +675,29 @@ export function renderHTML(
       gap: 12px;
     }
     
+    .geo-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--accent);
+      font-family: inherit;
+      font-size: 12px;
+      padding: 4px 12px;
+      border-radius: 999px;
+      cursor: pointer;
+      margin-top: 10px;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .geo-btn:hover { background: var(--border); border-color: var(--accent); }
+
+    .last-location {
+      font-size: 11px;
+      color: var(--fg-muted);
+      margin-top: 6px;
+      display: none;
+    }
+    .last-location a { color: var(--accent); text-decoration: none; }
+    .last-location a:hover { text-decoration: underline; }
+
     .current-condition {
       margin-top: 16px;
       font-size: 15px;
@@ -950,6 +973,8 @@ export function renderHTML(
             <span>${location.lat.toFixed(4)}, ${location.lon.toFixed(4)}</span>
           </div>
         </div>
+        <button class="geo-btn" id="geoBtn" onclick="detectLocation()">\u{1F4CD} Use my precise location</button>
+        <div class="last-location" id="lastLocation"></div>
       </div>
       
       <div class="current-condition">${currentLabel} • Updated ${new Date(current.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
@@ -1008,6 +1033,40 @@ export function renderHTML(
       </div>
     </footer>
   </div>
+  <script>
+  function detectLocation() {
+    var btn = document.getElementById('geoBtn');
+    btn.textContent = '\u{1F4CD} Locating...';
+    if (!navigator.geolocation) { btn.textContent = '\u{1F4CD} Not supported'; return; }
+    navigator.geolocation.getCurrentPosition(function(pos) {
+      fetch('/api/nearest?lat=' + pos.coords.latitude + '&lon=' + pos.coords.longitude + '&limit=1')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d.results && d.results.length > 0) {
+            var code = d.results[0].code;
+            var name = d.results[0].name;
+            localStorage.setItem('cuaca:adm4', code);
+            localStorage.setItem('cuaca:desa', name);
+            window.location.href = '/?adm4=' + code;
+          } else { btn.textContent = '\u{1F4CD} Not found'; }
+        })
+        .catch(function() { btn.textContent = '\u{1F4CD} Error'; });
+    }, function(err) {
+      btn.textContent = err.code === 1 ? '\u{1F4CD} Permission denied' : '\u{1F4CD} Unavailable';
+    }, { timeout: 10000 });
+  }
+  (function() {
+    var saved = localStorage.getItem('cuaca:adm4');
+    var name = localStorage.getItem('cuaca:desa');
+    if (saved && !window.location.search.includes('adm4=')) {
+      var hint = document.getElementById('lastLocation');
+      if (hint) {
+        hint.innerHTML = 'Last known: <a href="/?adm4=' + saved + '">' + (name || saved) + '</a>';
+        hint.style.display = 'block';
+      }
+    }
+  })();
+  </script>
 </body></html>`;
 }
 

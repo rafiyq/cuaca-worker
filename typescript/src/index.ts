@@ -149,8 +149,8 @@ export default {
     // GET / - Terminal weather (auto-location via GeoIP or default)
     if (url.pathname === "/" || url.pathname === "/weather") {
       try {
-        const adm4 = await resolveAdm4FromRequest(request, env, url);
-        return await serveWeatherView(request, ctx, adm4, url.searchParams.get("format"), corsHeaders);
+        const { adm4, source } = await resolveAdm4FromRequest(request, env, url);
+        return await serveWeatherView(request, ctx, adm4, source, url.searchParams.get("format"), corsHeaders);
       } catch (e) {
         return new Response(`Error: ${e}`, { status: 502, headers: corsHeaders });
       }
@@ -160,8 +160,10 @@ export default {
     if (url.pathname.startsWith("/") && url.pathname.length > 1 && !url.pathname.startsWith("/api")) {
       const locationName = url.pathname.slice(1);
       try {
-        const adm4 = await resolveLocationCached(locationName, env) || "31.71.03.1001";
-        return await serveWeatherView(request, ctx, adm4, url.searchParams.get("format"), corsHeaders);
+        const resolved = await resolveLocationCached(locationName, env);
+        const adm4 = resolved || "31.71.03.1001";
+        const source: LocationSource = resolved ? "name" : "default";
+        return await serveWeatherView(request, ctx, adm4, source, url.searchParams.get("format"), corsHeaders);
       } catch (e) {
         return new Response(`Error: ${e}`, { status: 502, headers: corsHeaders });
       }
@@ -238,11 +240,32 @@ function responseHeaders(h: Record<string, string>, cacheStatus: string, timing:
   return headers;
 }
 
+// Build the final response: location headers + optional fallback note
+function finalizeResponse(
+  body: string,
+  headers: Record<string, string>,
+  cacheStatus: string,
+  timing: string,
+  adm4: string,
+  source: LocationSource,
+  view: string
+): Response {
+  const h = responseHeaders(headers, cacheStatus, timing);
+  h.set("X-Cuaca-Location", `adm4=${adm4}`);
+  h.set("X-Cuaca-Source", source);
+  let finalBody = body;
+  if (source === "default" && view === "terminal") {
+    finalBody = "\x1b[2mNote: default location (Kemayoran) \u2014 pass ?adm4= or ?lat=&lon= for yours\x1b[0m\n\n" + body;
+  }
+  return new Response(finalBody, { headers: h });
+}
+
 // Serve one of the weather views with caching (used by / and /:location)
 async function serveWeatherView(
   request: Request,
   ctx: ExecutionContext | undefined,
   adm4: string,
+  source: LocationSource,
   format: string | null,
   corsHeaders: Record<string, string>
 ): Promise<Response> {
@@ -268,9 +291,7 @@ async function serveWeatherView(
     const data = await fetchForecast(adm4);
     const location = toLocationInfo(data);
     const body = formatCustom(format as string, data.forecast[0], location);
-    return new Response(body, {
-      headers: responseHeaders(baseHeaders, "BYPASS", `upstream;dur=${Date.now() - t0}, cache;desc=BYPASS`),
-    });
+    return finalizeResponse(body, baseHeaders, "BYPASS", `upstream;dur=${Date.now() - t0}, cache;desc=BYPASS`, adm4, source, view);
   }
 
   const key = cacheKey(adm4, view);
@@ -278,9 +299,7 @@ async function serveWeatherView(
   // 1) Memory cache
   const memHit = resCache.get(key);
   if (memHit && memHit.expires > Date.now()) {
-    return new Response(memHit.body, {
-      headers: responseHeaders(memHit.headers, "MEMHIT", `cache;desc=MEM`),
-    });
+    return finalizeResponse(memHit.body, memHit.headers, "MEMHIT", `cache;desc=MEM`, adm4, source, view);
   }
 
   // 2) Cache API (per-colo edge cache)
@@ -293,9 +312,7 @@ async function serveWeatherView(
     edgeHit.headers.forEach((v, k) => { headers[k] = v; });
     // promote to memory for next time
     setResCache(key, { expires: Date.now() + CACHE_TTL_MS, body, headers });
-    return new Response(body, {
-      headers: responseHeaders(headers, "EDGEHIT", `cache;desc=EDGE`),
-    });
+    return finalizeResponse(body, headers, "EDGEHIT", `cache;desc=EDGE`, adm4, source, view);
   }
 
   // 3) MISS: fetch + render
@@ -332,9 +349,7 @@ async function serveWeatherView(
   setResCache(key, { expires: Date.now() + CACHE_TTL_MS, body, headers });
   ctx?.waitUntil?.(cache.put(cacheUrl, new Response(body, { headers })));
 
-  return new Response(body, {
-    headers: responseHeaders(headers, "MISS", `upstream;dur=${upstreamMs}, render;dur=${renderMs}, cache;desc=MISS`),
-  });
+  return finalizeResponse(body, headers, "MISS", `upstream;dur=${upstreamMs}, render;dur=${renderMs}, cache;desc=MISS`, adm4, source, view);
 }
 
 function toLocationInfo(data: Awaited<ReturnType<typeof fetchForecast>>): LocationInfo {
@@ -545,17 +560,19 @@ async function getWilayahByCode(code: string, env?: Env): Promise<WilayahCodeRes
 }
 
 // ===== Location Resolution =====
-async function resolveAdm4FromRequest(request: Request, env: Env, url: URL): Promise<string> {
+export type LocationSource = "param" | "query" | "geoip" | "name" | "default";
+
+async function resolveAdm4FromRequest(request: Request, env: Env, url: URL): Promise<{ adm4: string; source: LocationSource }> {
   // 1. Explicit adm4 in query
   const explicitAdm4 = url.searchParams.get("adm4");
-  if (explicitAdm4) return explicitAdm4;
+  if (explicitAdm4) return { adm4: explicitAdm4, source: "param" };
 
   // 2. Explicit lat/lon in query (cached ~1 km, 24 h)
   const lat = url.searchParams.get("lat");
   const lon = url.searchParams.get("lon");
   if (lat && lon) {
     const adm4 = await nearestAdm4Cached(parseFloat(lat), parseFloat(lon));
-    if (adm4) return adm4;
+    if (adm4) return { adm4, source: "query" };
   }
 
   // 3. Cloudflare GeoIP headers (cached ~1 km, 24 h)
@@ -563,11 +580,11 @@ async function resolveAdm4FromRequest(request: Request, env: Env, url: URL): Pro
   const cfLon = request.headers.get("CF-IPLongitude");
   if (cfLat && cfLon) {
     const adm4 = await nearestAdm4Cached(parseFloat(cfLat), parseFloat(cfLon));
-    if (adm4) return adm4;
+    if (adm4) return { adm4, source: "geoip" };
   }
 
   // 4. Default: Kemayoran, Jakarta
-  return "31.71.03.1001";
+  return { adm4: "31.71.03.1001", source: "default" };
 }
 
 async function resolveLocation(name: string, env?: Env): Promise<string | null> {
