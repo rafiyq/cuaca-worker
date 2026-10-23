@@ -1,171 +1,114 @@
-# cuaca-worker
+# cuaca (TypeScript)
 
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/yourusername/cuaca-worker)
+Production Cloudflare Worker behind [cuaca](https://cuaca.wilayah.workers.dev) —
+terminal-first weather for Indonesia, powered by BMKG. Part of the
+[cuaca-worker monorepo](../README.md) (this implementation is production; `rust/` is parked).
 
-A terminal-first weather service for Indonesia, powered by **BMKG** (Badan Meteorologi, Klimatologi, dan Geofisika) and **wilayah-worker** for location lookup. Runs on **Cloudflare Workers** with zero cold starts and minimal footprint.
+[![typescript CI](https://github.com/rafiyq/cuaca-worker/actions/workflows/typescript.yml/badge.svg)](https://github.com/rafiyq/cuaca-worker/actions/workflows/typescript.yml)
 
 ```
-$ curl cuaca.workers.dev/Jakarta
-     .-.       Cerah
-      __)      +31°C
-     (         ↑ 12.7 km/h
-      `-’      61% humidity
-       •       10% rain
+$ curl https://cuaca.wilayah.workers.dev/Jakarta
 
- Mon, Oct 13
-┌──────────────────┬──────────────────┬──────────────────┬──────────────────┐
-│     Morning      │      Noon        │    Evening       │      Night       │
-├──────────────────┼──────────────────┼──────────────────┼──────────────────┤
-│  .-.  Cerah      │  .-.  Berawan    │  `-'  Cerah      │  `-'  Cerah      │
-│     +31°C        │     +33°C        │     +29°C        │     +27°C        │
-│  ↑ 12.7 km/h     │  → 3.1 km/h      │  ↗ 5.6 km/h      │  ↓ 2.0 km/h      │
-│   10% 61%        │   0% 71%         │   0% 72%         │   0% 85%         │
-└──────────────────┴──────────────────┴──────────────────┴──────────────────┘
+Weather report: Kemayoran, Kemayoran
+
+    \ . /        Cerah
+   - .-. -       +32°C
+  ‒ (   ) ‒      ↖ 13.0 km/h
+   . `-᾿ .       54% humidity
+    / ' \         0% rain
+
+ Wed, Oct 22
+┌──────────────┬──────────────┬──────────────┬──────────────┐
+│ 13:00        │ 16:00        │ 19:00        │ 22:00        │
+│  \ . /  Cerah│  \ . /  Cerah│  \__/  Cerah │    *   Cerah │
+...
 ```
-
-## Features
-
-| Feature | Description |
-|---------|-------------|
-| **Terminal-first** | ANSI-colored output for `curl`, HTML for browsers |
-| **One-line formats** | `?format=3` short format, custom templates |
-| **Auto-location** | Cloudflare GeoIP headers → nearest village |
-| **Indonesia coverage** | 80k+ villages via wilayah-worker API |
-| **BMKG official data** | 3-day forecast, 3-hour intervals, weather warnings |
-| **Multiple formats** | Terminal, HTML, JSON, custom, Prometheus, speech |
-| **Zero deps** | ~2 KB bundle, 0ms cold start |
-| **Edge cached** | 5min forecast, 15min warnings, 24h location lookups |
-
-## Quick Start
-
-### Terminal (curl)
-```bash
-# Full weather
-curl cuaca.workers.dev/Jakarta
-curl cuaca.workers.dev/Bandung
-curl cuaca.workers.dev/"Kemayoran"
-
-# Short format (Waybar, status bars)
-curl cuaca.workers.dev/Jakarta?format=3
-# Output: Kemayoran: ☀️ +31°C
-
-# Custom template (Waybar-style)
-curl cuaca.workers.dev/Jakarta?format='{ICON} {t}°C {weather_desc}'
-# Output: ☀️ 31°C Cerah
-
-# JSON API
-curl cuaca.workers.dev/api/forecast?adm4=31.71.03.1001
-```
-
-### Browser
-Open `https://cuaca.workers.dev/Jakarta` — auto-renders HTML with monospace font.
-
-### Location Formats
-| Input | Example | Resolves To |
-|-------|---------|-------------|
-| City name | `/Jakarta` | Nearest village in Jakarta |
-| District | `/Bandung` | Nearest village in Bandung |
-| Village | `/Kemayoran` | Exact village |
-| adm4 code | `?adm4=31.71.03.1001` | Exact code |
-| Coordinates | `?lat=-6.17&lon=106.82` | Nearest village |
-| Auto (GeoIP) | `/` | Your location via CF headers |
 
 ## Endpoints
 
-### Human-Facing
-| Endpoint | Description |
-|----------|-------------|
-| `GET /` | Terminal weather (auto GeoIP) |
-| `GET /:location` | Terminal weather for location |
-| `GET /:location?format=3` | Short: `Kemayoran: ☀️ +31°C` |
-| `GET /:location?format={template}` | Custom template |
+### Human-facing
 
-### Machine-Facing (JSON)
 | Endpoint | Description |
 |----------|-------------|
-| `GET /api/forecast?adm4=...` | 3-day forecast (8 slots/day) |
+| `GET /` | Auto-locate via Cloudflare GeoIP → terminal output |
+| `GET /:location` | By name (`/Jakarta`), adm4 code (`/31.71.03.1001`), or `?adm4=`, `?lat=&lon=` |
+| `GET /:location?format=3` | One-liner: `Kemayoran: ☀️ +32°C` |
+| `GET /:location?format={ICON} {t}°C {weather_desc}` | Waybar/custom template |
+| `GET /:location?format=prometheus` | Prometheus exposition (current conditions as gauges) |
+| Browser (Accept: text/html) | Styled page: colored ASCII art, warnings, responsive 3-day grid |
+
+Browsers get HTML; `curl`/`wget`/`httpie` get ANSI terminal output — same URL.
+
+### JSON API
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/forecast?adm4=31.71.03.1001` | 3-day forecast, 8 slots/day |
 | `GET /api/warnings?adm4=...` | BMKG weather warnings (CAP XML parsed) |
-| `GET /api/resolve?q=jakarta&limit=5` | Search villages by name |
-| `GET /api/nearest?lat=-6.17&lon=106.82&limit=1` | Reverse geocode |
-| `GET /api/locate?lat=-6.17&lon=106.82` | Full admin hierarchy |
+| `GET /api/resolve?q=jakarta&limit=5` | Village search by name |
+| `GET /api/nearest?lat=-6.17&lon=106.82&limit=1` | Nearest village to coordinates |
+| `GET /api/locate?lat=&lon=` | Full admin hierarchy for coordinates |
 | `GET /api/locations` | Example location codes |
 
-### Custom Format Placeholders
+### Custom format placeholders
+
+`{ICON}` `{ICON_ASCII}` `{t}` `{temp}` `{hu}` `{tcc}` `{tp}` `{rain}` `{ws}` `{wd}`
+`{weather_desc}` `{weather_desc_en}` `{condition}` `{desa}` `{kecamatan}` `{kotkab}` `{provinsi}`
+
+## Response headers (observability)
+
 ```
-{ICON}           → ☀️ 🌤️ 🌧️ ⛈️ (emoji)
-{ICON_ASCII}     → .-. .--. (ASCII art)
-{t}              → 31 (raw temperature)
-{temp}           → +31°C (formatted)
-{hu} / {humidity} → 61 (humidity %)
-{tcc} / {cloud}  → 23 (cloud cover %)
-{tp}             → 0.1 (rain probability 0-1)
-{rain}           → 10 (rain probability %)
-{ws} / {wind}    → 12.7 (wind speed km/h)
-{wd} / {wind_dir} → NE (wind direction)
-{weather_desc}   → Cerah (Indonesian)
-{weather_desc_en} → Sunny (English)
-{condition}      → Cerah
-{vs_text}        → Windy/Calm
-{desa}           → Kemayoran
-{kecamatan}      → Kemayoran
-{kotkab}         → Kota Adm. Jakarta Pusat
-{provinsi}       → DKI Jakarta
-```
-
-## Deployment
-
-### Prerequisites
-- Cloudflare account
-- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/install-and-update/)
-
-### Deploy
-```bash
-git clone https://github.com/yourusername/cuaca-worker
-cd cuaca-worker
-npm install
-npm run deploy
-```
-
-### Local Development
-```bash
-npm run dev
-# Opens http://localhost:8787
-```
-
-### Configuration
-`wrangler.jsonc`:
-```jsonc
-{
-  "name": "cuaca",
-  "main": "src/index.ts",
-  "compatibility_date": "2025-10-13",
-  "compatibility_flags": ["nodejs_compat"],
-  "assets": { "binding": "ASSETS", "directory": "./public" }
-}
+X-Cuaca-Cache: MISS | MEMHIT | EDGEHIT | BYPASS
+Server-Timing: upstream;dur=83, render;dur=1, cache;desc=MISS
+Cache-Control: public, max-age=60, s-maxage=300, stale-while-revalidate=600
 ```
 
 ## Architecture
 
 ```
-Request → Cloudflare Worker (TypeScript)
-    │
-    ├─► BMKG API (forecast)     ──► cache 5min
-    ├─► BMKG API (warnings)     ──► cache 15min
-    └─► wilayah-worker (geo)    ──► cache 24h
+request ──▶ resolve location (WILAYAH service binding → api worker)
+        │      cached 24h in-isolate (name/geo → adm4)
+        ├─▶ cache: memory (5min) ──▶ Cache API per-colo (5min) ──▶ fetch
+        │                                                        ├─ BMKG forecast (edge cache 5min)
+        │                                                        └─ BMKG warnings (edge cache 15min)
+        └─▶ render: ANSI terminal | styled HTML | short | prometheus | custom
 ```
 
-**Data Sources:**
-- **Forecast**: `https://api.bmkg.go.id/publik/prakiraan-cuaca`
-- **Warnings**: `https://api.bmkg.go.id/publik/peringatan-dini-cuaca` (CAP XML)
-- **Locations**: `https://api.wilayah.workers.dev` (83k+ villages, D1-backed)
+- **Service binding**: production calls to `api.wilayah.workers.dev` go through
+  the `WILAYAH` binding — same-account worker→worker fetches via the public
+  URL bypass the target worker (Cloudflare same-zone behavior). Falls back to
+  public fetch in local dev/CI where the binding isn't connected.
+- **Two-layer response cache** keyed `adm4:view` — `/Jakarta`, `?adm4=` and
+  GeoIP hits share artifacts. Custom `?format=` templates are never cached.
+- **Weather codes** match real BMKG values: `0,1` sun · `2` partly · `3,4`
+  cloud · `5,10,45` fog · `60,61` light rain · `63,80` heavy rain · `95,97` storm.
 
-## Testing
+See [PERF.md](./PERF.md) and [LAYOUT.md](./LAYOUT.md) for details.
+
+## Development
 
 ```bash
-npm test           # Run vitest tests
-npm run typecheck  # TypeScript check
+npm install --legacy-peer-deps
+npx wrangler dev --local --port 8787   # no login needed
+npm test                               # 12 render tests + 5 integration tests
 ```
 
-## License
+## Deployment
 
-MIT — Weather data © [BMKG](https://bmkg.go.id), location data © [wilayah-worker](https://github.com/rafiyq/wilayah-worker)
+Tag-triggered (`.github/workflows/deploy.yml`): push a `v*` tag → tests run
+on the tagged commit → `wrangler deploy --tag <version>` ships it. Pushes to
+`main` and PRs run CI only.
+
+```bash
+git tag -a v0.2.0 -m "Description" && git push origin v0.2.0
+```
+
+Local deploy (requires `wrangler login`): `npx wrangler deploy` from this directory.
+
+## Data sources
+
+- Forecast/warnings: [api.bmkg.go.id](https://api.bmkg.go.id)
+- Locations: [wilayah-worker](https://github.com/rafiyq/wilayah-worker) via service binding
+- Icons: ported from [cuaca-rs](https://github.com/rafiyq/cuaca-rs)
+
+License: MIT — see [root LICENSE](../LICENSE).

@@ -1,6 +1,6 @@
 // Unit tests for the renderers — pure functions, no network needed
 import { describe, it, expect } from "vitest";
-import { renderTerminal, renderHTML, SimpleForecast, LocationInfo } from "./render";
+import { renderTerminal, renderHTML, renderPrometheus, SimpleForecast, LocationInfo } from "./render";
 
 const loc: LocationInfo = {
   provinsi: "DKI Jakarta",
@@ -9,6 +9,7 @@ const loc: LocationInfo = {
   desa: "Kemayoran",
   lat: -6.1647,
   lon: 106.8454,
+  adm4: "31.71.03.1001",
 };
 
 // Times picked so day slots are 06:00-17:59, night 18:00-05:59
@@ -96,5 +97,22 @@ describe("renderHTML", () => {
     expect(out).toContain('class="temp-unit">°C');
     // temp-value must be the bare number (no °C inside)
     expect(out).toMatch(/class="temp-value[^"]*">\+31</);
+  });
+});
+
+
+describe("renderPrometheus", () => {
+  it("exposes current conditions as labeled gauges", () => {
+    const out = renderPrometheus(loc, [rainySlot]);
+    expect(out).toContain("# TYPE cuaca_temperature_celsius gauge");
+    expect(out).toContain('cuaca_temperature_celsius{location="Kemayoran",adm4="31.71.03.1001"} 31');
+    expect(out).toContain("cuaca_rain_probability_percent");
+    expect(out).toContain("cuaca_weather_code{");
+  });
+
+  it("includes HELP lines and trailing newline", () => {
+    const out = renderPrometheus(loc, [sunnyDay]);
+    expect(out).toContain("# HELP cuaca_temperature_celsius Current temperature (C)");
+    expect(out.endsWith("\n")).toBe(true);
   });
 });

@@ -1,5 +1,8 @@
 # cuaca-worker
 
+[![typescript CI](https://github.com/rafiyq/cuaca-worker/actions/workflows/typescript.yml/badge.svg)](https://github.com/rafiyq/cuaca-worker/actions/workflows/typescript.yml)
+[![rust CI](https://github.com/rafiyq/cuaca-worker/actions/workflows/ci-rust.yml/badge.svg)](https://github.com/rafiyq/cuaca-worker/actions/workflows/ci-rust.yml)
+
 Terminal-first weather service for Indonesia, powered by **BMKG**
 (Badan Meteorologi, Klimatologi, dan Geofisika) and **wilayah-worker**
 for location lookup. Runs on **Cloudflare Workers** — zero cold starts,
@@ -52,7 +55,8 @@ rust/                # experimental workers-rs port
 curl https://cuaca.wilayah.workers.dev/                     # auto-locate via GeoIP
 curl https://cuaca.wilayah.workers.dev/Jakarta              # by name
 curl https://cuaca.wilayah.workers.dev/Jakarta?format=3     # one-liner
-curl 'https://cuaca.wilayah.workers.dev/Jakarta?format=%7BICON%7D+%7Bt%7D%C2%B0C'   # Waybar
+curl 'https://cuaca.wilayah.workers.dev/Jakarta?format={ICON} {t}°C {weather_desc}'   # Waybar
+curl https://cuaca.wilayah.workers.dev/Jakarta?format=prometheus      # Prometheus metrics
 
 # Browser — styled page with colored ASCII art, warnings, 3-day forecast
 

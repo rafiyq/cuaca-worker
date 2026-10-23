@@ -52,7 +52,7 @@ interface Env {
   WILAYAH?: { fetch(input: RequestInfo, init?: RequestInit): Promise<Response> };
 }
 
-import { renderTerminal, renderHTML, wantsHTML, SimpleForecast, LocationInfo, Warning, weatherEmoji, asciiIconSingle } from "./render";
+import { renderTerminal, renderHTML, wantsHTML, SimpleForecast, LocationInfo, Warning, weatherEmoji, asciiIconSingle, renderPrometheus } from "./render";
 
 export default {
   async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
@@ -249,12 +249,16 @@ async function serveWeatherView(
   // Determine view; only full views need warnings (short/custom skip the fetch)
   const view =
     format === "3" || format === "short" ? "short"
+    : format === "prometheus" ? "prometheus"
     : format ? "custom"
     : wantsHTML(request) ? "html"
     : "terminal";
 
   const baseHeaders: Record<string, string> = {
-    "Content-Type": view === "html" ? "text/html; charset=utf-8" : "text/plain; charset=utf-8",
+    "Content-Type":
+      view === "html" ? "text/html; charset=utf-8"
+      : view === "prometheus" ? "text/plain; version=0.0.4; charset=utf-8"
+      : "text/plain; charset=utf-8",
     ...corsHeaders,
   };
 
@@ -310,6 +314,8 @@ async function serveWeatherView(
     const current = data.forecast[0];
     const icon = weatherEmoji(current.weather, new Date(current.time).getHours());
     body = `${location.desa}: ${icon} ${formatTemp(current.temp)}`;
+  } else if (view === "prometheus") {
+    body = renderPrometheus(location, data.forecast);
   } else if (view === "html") {
     body = renderHTML(location, data.forecast, warnings);
   } else {

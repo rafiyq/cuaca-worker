@@ -1003,7 +1003,7 @@ export function renderHTML(
     <footer>
       <p>Data: <a href="https://bmkg.go.id" target="_blank" rel="noopener">BMKG</a> • Geo: <a href="https://api.wilayah.workers.dev" target="_blank" rel="noopener">wilayah.workers.dev</a></p>
       <div class="footer-links">
-        <a href="https://github.com/yourusername/cuaca-worker" target="_blank" rel="noopener">Source</a>
+        <a href="https://github.com/rafiyq/cuaca-worker" target="_blank" rel="noopener">Source</a>
         <span>Built with Cloudflare Workers</span>
       </div>
     </footer>
@@ -1022,6 +1022,28 @@ function getTempClass(temp: number): string {
 }
 
 // Helper to get current icon lines for header
+
+// Prometheus exposition format (text/plain; version=0.0.4)
+// Exposes current conditions as gauges, labeled with location + adm4.
+export function renderPrometheus(location: LocationInfo, forecast: SimpleForecast[]): string {
+  const c = forecast[0];
+  const labels = `location="${location.desa}",adm4="${location.adm4 ?? ""}"`;
+  const metrics: Array<[string, string, string]> = [
+    ["cuaca_weather_code", "BMKG weather code for current conditions", String(c.weather)],
+    ["cuaca_temperature_celsius", "Current temperature (C)", String(c.temp)],
+    ["cuaca_humidity_percent", "Current relative humidity (%)", String(c.humidity)],
+    ["cuaca_wind_speed_kmh", "Current wind speed (km/h)", c.windSpeed.toFixed(1)],
+    ["cuaca_cloud_cover_percent", "Current cloud cover (%)", String(c.cloudCover)],
+    ["cuaca_rain_probability_percent", "Current rain probability (%)", String(c.rainProb)],
+  ];
+  const lines: string[] = [];
+  for (const [name, help, value] of metrics) {
+    lines.push(`# HELP ${name} ${help}`);
+    lines.push(`# TYPE ${name} gauge`);
+    lines.push(`${name}{${labels}} ${value}`);
+  }
+  return lines.join("\n") + "\n";
+}
 
 // Detect if request wants HTML (browser) or plain text (curl)
 export function wantsHTML(request: Request): boolean {
