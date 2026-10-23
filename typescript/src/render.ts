@@ -556,6 +556,7 @@ export function renderHTML(
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Cuaca ${location.desa} - BMKG Weather Forecast">
   <meta name="theme-color" content="#1e1e2e">
+  <link rel="manifest" href="data:application/json,%7B%22name%22%3A%22cuaca%22%2C%22short_name%22%3A%22cuaca%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23181825%22%2C%22theme_color%22%3A%22%231e1e2e%22%2C%22start_url%22%3A%22%2F%22%2C%22icons%22%3A%5B%5D%7D">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='5' fill='%23fbbf24'/%3E%3Cg stroke='%23fbbf24' stroke-width='2' stroke-linecap='round'%3E%3Cline x1='12' y1='1' x2='12' y2='4'/%3E%3Cline x1='12' y1='20' x2='12' y2='23'/%3E%3Cline x1='1' y1='12' x2='4' y2='12'/%3E%3Cline x1='20' y1='12' x2='23' y2='12'/%3E%3Cline x1='4.2' y1='4.2' x2='6.3' y2='6.3'/%3E%3Cline x1='17.7' y1='17.7' x2='19.8' y2='19.8'/%3E%3Cline x1='4.2' y1='19.8' x2='6.3' y2='17.7'/%3E%3Cline x1='17.7' y1='6.3' x2='19.8' y2='4.2'/%3E%3C/g%3E%3C/svg%3E">
   <meta property="og:title" content="cuaca — ${location.desa}: ${formatTemp(current.temp)} ${current.condition}">
   <meta property="og:description" content="BMKG 3-day forecast for ${location.desa}, ${location.kotkab}, ${location.provinsi}. Humidity ${current.humidity}%, rain ${current.rainProb}%.">
@@ -697,6 +698,55 @@ export function renderHTML(
     }
     .last-location a { color: var(--accent); text-decoration: none; }
     .last-location a:hover { text-decoration: underline; }
+
+    /* Location search */
+    .search-wrap {
+      position: relative;
+      margin-top: 10px;
+    }
+    .search-input {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      color: var(--fg);
+      font-family: inherit;
+      font-size: 13px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      width: 100%;
+      max-width: 280px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .search-input:focus { border-color: var(--accent); }
+    .search-input::placeholder { color: var(--fg-muted); }
+    .search-results {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      min-width: 260px;
+      max-height: 240px;
+      overflow-y: auto;
+      z-index: 10;
+      display: none;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    }
+    .search-result {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      font-size: 12px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.15s;
+    }
+    .search-result:last-child { border-bottom: none; }
+    .search-result:hover, .search-result.active { background: var(--border); }
+    .search-result-name { color: var(--fg); font-weight: 500; }
+    .search-result-meta { color: var(--fg-muted); font-size: 10px; text-align: right; }
 
     .current-condition {
       margin-top: 16px;
@@ -973,6 +1023,10 @@ export function renderHTML(
             <span>${location.lat.toFixed(4)}, ${location.lon.toFixed(4)}</span>
           </div>
         </div>
+        <div class="search-wrap">
+          <input class="search-input" id="searchInput" type="text" placeholder="\u{1F50D} Search location..." autocomplete="off" spellcheck="false">
+          <div class="search-results" id="searchResults"></div>
+        </div>
         <button class="geo-btn" id="geoBtn" onclick="detectLocation()">\u{1F4CD} Use my precise location</button>
         <div class="last-location" id="lastLocation"></div>
       </div>
@@ -1055,6 +1109,68 @@ export function renderHTML(
       btn.textContent = err.code === 1 ? '\u{1F4CD} Permission denied' : '\u{1F4CD} Unavailable';
     }, { timeout: 10000 });
   }
+  // Location search: debounce + fetch /api/resolve + keyboard navigation
+  var searchTimer = null;
+  var searchInput = document.getElementById('searchInput');
+  var searchResults = document.getElementById('searchResults');
+  var activeIdx = -1;
+
+  function hideResults() { searchResults.style.display = 'none'; activeIdx = -1; }
+
+  function renderResults(items) {
+    searchResults.innerHTML = '';
+    if (!items.length) { hideResults(); return; }
+    for (var i = 0; i < items.length; i++) {
+      var r = items[i];
+      var el = document.createElement('div');
+      el.className = 'search-result';
+      el.innerHTML = '<span class="search-result-name">' + r.name + '</span>' +
+        '<span class="search-result-meta">' + r.city + '</span>';
+      el.onclick = (function(code) {
+        return function() {
+          window.location.href = '/?adm4=' + code;
+          hideResults();
+        };
+      })(r.code);
+      searchResults.appendChild(el);
+    }
+    searchResults.style.display = 'block';
+    activeIdx = -1;
+  }
+
+  searchInput.addEventListener('input', function() {
+    clearTimeout(searchTimer);
+    var q = searchInput.value.trim();
+    if (q.length < 2) { hideResults(); return; }
+    searchTimer = setTimeout(function() {
+      fetch('/api/resolve?q=' + encodeURIComponent(q) + '&limit=6')
+        .then(function(r) { return r.json(); })
+        .then(function(d) { renderResults(d.results || []); })
+        .catch(function() { hideResults(); });
+    }, 200);
+  });
+
+  searchInput.addEventListener('keydown', function(e) {
+    var items = searchResults.children;
+    if (!items.length) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      items[activeIdx] && items[activeIdx].classList.remove('active');
+      activeIdx = e.key === 'ArrowDown'
+        ? (activeIdx + 1) % items.length
+        : (activeIdx - 1 + items.length) % items.length;
+      items[activeIdx].classList.add('active');
+    } else if (e.key === 'Enter' && activeIdx >= 0) {
+      items[activeIdx].click();
+    } else if (e.key === 'Escape') {
+      hideResults();
+    }
+  });
+
+  document.addEventListener('click', function(e) {
+    if (!searchResults.contains(e.target) && e.target !== searchInput) hideResults();
+  });
+
   (function() {
     var saved = localStorage.getItem('cuaca:adm4');
     var name = localStorage.getItem('cuaca:desa');
