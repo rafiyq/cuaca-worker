@@ -571,7 +571,7 @@ async function resolveAdm4FromRequest(request: Request, env: Env, url: URL): Pro
   const lat = url.searchParams.get("lat");
   const lon = url.searchParams.get("lon");
   if (lat && lon) {
-    const adm4 = await nearestAdm4Cached(parseFloat(lat), parseFloat(lon));
+    const adm4 = await nearestAdm4Cached(parseFloat(lat), parseFloat(lon), env);
     if (adm4) return { adm4, source: "query" };
   }
 
@@ -579,7 +579,7 @@ async function resolveAdm4FromRequest(request: Request, env: Env, url: URL): Pro
   const cfLat = request.headers.get("CF-IPLatitude");
   const cfLon = request.headers.get("CF-IPLongitude");
   if (cfLat && cfLon) {
-    const adm4 = await nearestAdm4Cached(parseFloat(cfLat), parseFloat(cfLon));
+    const adm4 = await nearestAdm4Cached(parseFloat(cfLat), parseFloat(cfLon), env);
     if (adm4) return { adm4, source: "geoip" };
   }
 
