@@ -47,12 +47,12 @@ interface WilayahCodeResult {
 
 // Cloudflare bindings (minimal; see worker-configuration.d.ts for generated types)
 interface Env {
-  AI?: unknown;
+  AI?: { run(model: string, input: unknown): Promise<{ response?: string }> };
   ASSETS?: unknown;
   WILAYAH?: { fetch(input: RequestInfo, init?: RequestInit): Promise<Response> };
 }
 
-import { renderTerminal, renderHTML, wantsHTML, SimpleForecast, LocationInfo, Warning, weatherEmoji, asciiIconSingle, renderPrometheus } from "./render";
+import { renderTerminal, renderHTML, wantsHTML, SimpleForecast, LocationInfo, Warning, weatherEmoji, asciiIconSingle, renderPrometheus, parseLang } from "./render";
 
 export default {
   async fetch(request: Request, env: Env, ctx?: ExecutionContext): Promise<Response> {
@@ -141,16 +141,40 @@ export default {
       }
     }
 
-    // GET /api/ai-report?adm4=...&style=brief|detailed|conversational - AI-generated weather report (DISABLED)
+    // GET /api/ai-report?adm4=...&style=brief|detailed|conversational - AI-generated weather report
     if (url.pathname === "/api/ai-report") {
-      return json({ error: "AI report feature is currently disabled" }, 501, corsHeaders);
+      const adm4 = url.searchParams.get("adm4");
+      const style = url.searchParams.get("style") || "brief";
+      if (!adm4) {
+        return json({ error: "adm4 parameter required (e.g., 31.71.03.1001)" }, 400, corsHeaders);
+      }
+      if (!env.AI) {
+        return json({ error: "Workers AI binding not configured" }, 503, corsHeaders);
+      }
+      try {
+        const [data, warnings] = await Promise.all([
+          fetchForecast(adm4),
+          fetchWarnings(adm4).catch(() => [] as Warning[]),
+        ]);
+        const report = await generateAIReport(env.AI, data, warnings, style);
+        return new Response(report, {
+          headers: {
+            "Content-Type": "text/plain; charset=utf-8",
+            "X-Cuaca-Location": `adm4=${adm4}`,
+            "X-Cuaca-Source": "param",
+            ...corsHeaders,
+          },
+        });
+      } catch (e) {
+        return json({ error: "Failed to generate AI report", detail: String(e) }, 502, corsHeaders);
+      }
     }
 
     // GET / - Terminal weather (auto-location via GeoIP or default)
     if (url.pathname === "/" || url.pathname === "/weather") {
       try {
         const { adm4, source } = await resolveAdm4FromRequest(request, env, url);
-        return await serveWeatherView(request, ctx, adm4, source, url.searchParams.get("format"), corsHeaders);
+        return await serveWeatherView(request, ctx, adm4, source, url.searchParams.get("format"), corsHeaders, url.searchParams.get("lang"));
       } catch (e) {
         return new Response(`Error: ${e}`, { status: 502, headers: corsHeaders });
       }
@@ -163,7 +187,7 @@ export default {
         const resolved = await resolveLocationCached(locationName, env);
         const adm4 = resolved || "31.71.03.1001";
         const source: LocationSource = resolved ? "name" : "default";
-        return await serveWeatherView(request, ctx, adm4, source, url.searchParams.get("format"), corsHeaders);
+        return await serveWeatherView(request, ctx, adm4, source, url.searchParams.get("format"), corsHeaders, url.searchParams.get("lang"));
       } catch (e) {
         return new Response(`Error: ${e}`, { status: 502, headers: corsHeaders });
       }
@@ -179,6 +203,100 @@ export default {
           { adm4: "33.74.07.1001", name: "Semarang Tengah, Semarang" },
           { adm4: "35.78.03.1001", name: "Tegalsari, Surabaya" },
         ],
+      }, 200, corsHeaders);
+    }
+
+    // GET /api/openapi.json - OpenAPI 3.1 spec
+    if (url.pathname === "/api/openapi.json") {
+      return json({
+        openapi: "3.1.0",
+        info: {
+          title: "cuaca",
+          description: "Terminal-first weather for Indonesia, powered by BMKG",
+          version: "0.5.0",
+        },
+        servers: [{ url: "https://cuaca.wilayah.workers.dev" }],
+        paths: {
+          "/": {
+            get: {
+              summary: "Weather by location (terminal or HTML based on Accept/User-Agent)",
+              parameters: [
+                { name: "adm4", in: "query", schema: { type: "string" }, description: "Village code (e.g., 31.71.03.1001)" },
+                { name: "lat", in: "query", schema: { type: "number" }, description: "Latitude" },
+                { name: "lon", in: "query", schema: { type: "number" }, description: "Longitude" },
+                { name: "format", in: "query", schema: { type: "string" }, description: "3, short, prometheus, or custom template" },
+              ],
+              responses: { "200": { description: "Weather output" } },
+            },
+          },
+          "/{location}": {
+            get: {
+              summary: "Weather by location name",
+              parameters: [{ name: "location", in: "path", required: true, schema: { type: "string" } }],
+              responses: { "200": { description: "Weather output" } },
+            },
+          },
+          "/api/forecast": {
+            get: {
+              summary: "3-day forecast (JSON)",
+              parameters: [{ name: "adm4", in: "query", required: true, schema: { type: "string" } }],
+              responses: { "200": { description: "Forecast JSON" } },
+            },
+          },
+          "/api/warnings": {
+            get: {
+              summary: "Weather warnings (JSON, CAP XML parsed)",
+              parameters: [{ name: "adm4", in: "query", required: true, schema: { type: "string" } }],
+              responses: { "200": { description: "Warnings JSON" } },
+            },
+          },
+          "/api/resolve": {
+            get: {
+              summary: "Search villages by name",
+              parameters: [
+                { name: "q", in: "query", required: true, schema: { type: "string" } },
+                { name: "limit", in: "query", schema: { type: "integer", default: 10 } },
+              ],
+              responses: { "200": { description: "Matching villages" } },
+            },
+          },
+          "/api/nearest": {
+            get: {
+              summary: "Nearest village to coordinates",
+              parameters: [
+                { name: "lat", in: "query", required: true, schema: { type: "number" } },
+                { name: "lon", in: "query", required: true, schema: { type: "number" } },
+              ],
+              responses: { "200": { description: "Nearest village" } },
+            },
+          },
+          "/api/locate": {
+            get: {
+              summary: "Full admin hierarchy for coordinates",
+              parameters: [
+                { name: "lat", in: "query", required: true, schema: { type: "number" } },
+                { name: "lon", in: "query", required: true, schema: { type: "number" } },
+              ],
+              responses: { "200": { description: "Admin hierarchy" } },
+            },
+          },
+          "/api/ai-report": {
+            get: {
+              summary: "AI-generated weather report (requires Workers AI)",
+              parameters: [
+                { name: "adm4", in: "query", required: true, schema: { type: "string" } },
+                { name: "style", in: "query", schema: { type: "string", enum: ["brief", "detailed", "conversational"] } },
+              ],
+              responses: { "200": { description: "Natural language weather report" } },
+            },
+          },
+          "/api/locations": {
+            get: {
+              summary: "Example location codes",
+              responses: { "200": { description: "List of examples" } },
+            },
+          },
+        },
       }, 200, corsHeaders);
     }
 
@@ -310,8 +428,10 @@ async function serveWeatherView(
   adm4: string,
   source: LocationSource,
   format: string | null,
-  corsHeaders: Record<string, string>
+  corsHeaders: Record<string, string>,
+  langStr: string | null = null
 ): Promise<Response> {
+  const lang = parseLang(langStr);
   // Determine view; only full views need warnings (short/custom skip the fetch)
   const view =
     format === "3" || format === "short" ? "short"
@@ -379,7 +499,7 @@ async function serveWeatherView(
   } else if (view === "html") {
     body = renderHTML(location, data.forecast, warnings);
   } else {
-    body = renderTerminal(location, data.forecast, warnings);
+    body = renderTerminal(location, data.forecast, warnings, lang);
   }
   const renderMs = Date.now() - tRender;
 

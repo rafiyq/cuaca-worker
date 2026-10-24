@@ -29,6 +29,17 @@ export default defineWorkersConfig({
               ],
               compatibilityDate: "2025-10-13",
             },
+            {
+              name: "ai-stub",
+              modules: [
+                {
+                  type: "ESModule",
+                  path: "ai-stub.js",
+                  contents: "export default { async fetch() { return new Response('{\"response\": \"stub\"}', { headers: { 'Content-Type': 'application/json' } }); } };",
+                },
+              ],
+              compatibilityDate: "2025-10-13",
+            },
           ],
         },
       },

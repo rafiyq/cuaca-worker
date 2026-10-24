@@ -204,6 +204,32 @@ function formatWind(speed: number, dir: string): string {
   return `${windArrow(dir)} ${speed.toFixed(1)} km/h`;
 }
 
+export type Lang = "id" | "en";
+
+export function parseLang(lang: string | null): Lang {
+  return lang === "en" ? "en" : "id";
+}
+
+// Terminal labels by language
+const LABELS = {
+  id: {
+    report: "Weather report",
+    humidity: "humidity",
+    rain: "rain",
+    cloud: "cloud",
+    location: "Location",
+    data: "Data",
+  },
+  en: {
+    report: "Weather report",
+    humidity: "humidity",
+    rain: "rain",
+    cloud: "cloud",
+    location: "Location",
+    data: "Data",
+  },
+} as const;
+
 function groupByDay(forecast: SimpleForecast[]): Map<string, SimpleForecast[]> {
   const days = new Map<string, SimpleForecast[]>();
   for (const f of forecast) {
@@ -268,13 +294,14 @@ function ansiWarning(severity: string): string {
 export function renderTerminal(
   location: LocationInfo, 
   forecast: SimpleForecast[], 
-  warnings: Warning[] = []
+  warnings: Warning[] = [],
+  lang: Lang = "id"
 ): string {
   const lines: string[] = [];
   const days = groupByDay(forecast);
   
   // Header
-  lines.push(`${ANSI.bold}Weather report: ${location.desa}, ${location.kecamatan}${ANSI.reset}`);
+  lines.push(`${ANSI.bold}${LABELS[lang].report}: ${location.desa}, ${location.kecamatan}${ANSI.reset}`);
   lines.push("");
   
   // Current conditions (first forecast item) — real 5-line icon
@@ -285,8 +312,8 @@ export function renderTerminal(
   lines.push(`    ${currentIcon[0]}    ${current.condition}`);
   lines.push(`    ${currentIcon[1]}    ${ansiTemp(current.temp)}`);
   lines.push(`    ${currentIcon[2]}    ${formatWind(current.windSpeed, current.windDir)}`);
-  lines.push(`    ${currentIcon[3]}    ${current.humidity}% humidity`);
-  lines.push(`    ${currentIcon[4]}    ${current.rainProb}% rain`);
+  lines.push(`    ${currentIcon[3]}    ${current.humidity}% ${LABELS[lang].humidity}`);
+  lines.push(`    ${currentIcon[4]}    ${current.rainProb}% ${LABELS[lang].rain}`);
   lines.push("");
   
   // Weather Warnings
@@ -361,7 +388,7 @@ export function renderTerminal(
         padCell(` ${icon[1]} ` + ` ${ansiTemp(f.temp)} `, cellW),
         padCell(` ${icon[2]} ` + ` ${formatWind(f.windSpeed, f.windDir)} `, cellW),
         padCell(` ${icon[3]} ` + ` ${f.cloudCover}% cloud R${f.rainProb}% `, cellW),
-        padCell(` ${icon[4]} ` + ` ${f.humidity}% humidity `, cellW),
+        padCell(` ${icon[4]} ` + ` ${f.humidity}% ${LABELS[lang].humidity} `, cellW),
       ]);
     }
     
@@ -383,7 +410,7 @@ export function renderTerminal(
     lines.push("");
   }
   
-  lines.push(`Location: ${location.desa}, ${location.kecamatan}, ${location.kotkab}, ${location.provinsi} [${location.lat},${location.lon}]`);
+  lines.push(`${LABELS[lang].location}: ${location.desa}, ${location.kecamatan}, ${location.kotkab}, ${location.provinsi} [${location.lat},${location.lon}]`);
   lines.push("");
   lines.push(`${ANSI.dim}Data: BMKG | Location: wilayah.workers.dev${ANSI.reset}`);
   
