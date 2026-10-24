@@ -4,6 +4,9 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-10-13",
   "compatibility_flags": ["nodejs_compat"],
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
   "services": [
     {
       "binding": "WILAYAH",

@@ -198,6 +198,49 @@ export default {
       ] 
     }, 404, corsHeaders);
   },
+
+  // Cron pre-warm: fetch top-city forecasts every 5 min (PERF item 7).
+  // Warms the BMKG edge-cache entry + the isolate memory for the cron colo,
+  // so first real request is already a cache hit. Other colos warm naturally
+  // from real traffic. Runs even when there's zero traffic.
+  async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    const TOP_CITIES = [
+      "31.71.03.1001",  // Kemayoran, Jakarta
+      "31.71.01.1001",  // Gambir, Jakarta
+      "32.73.07.1001",  // Cibeunying Kaler, Bandung
+      "33.74.07.1001",  // Semarang Tengah, Semarang
+      "35.78.03.1001",  // Tegalsari, Surabaya
+      "34.71.07.1001",  // Yogyakarta
+      "12.71.07.1001",  // Medan
+      "51.71.07.1001",  // Denpasar
+      "73.71.07.1001",  // Makassar
+      "16.71.07.1001",  // Palembang
+    ];
+
+    const results = await Promise.allSettled(
+      TOP_CITIES.flatMap(adm4 =>
+        [terminalView(adm4), htmlView(adm4)]
+      )
+    );
+
+    const ok = results.filter(r => r.status === "fulfilled").length;
+    const total = results.length;
+    console.log(`[cron] pre-warmed ${ok}/${total} cache entries`);
+
+    async function terminalView(adm4: string): Promise<void> {
+      const data = await fetchForecast(adm4);
+      const location = toLocationInfo(data);
+      const body = renderTerminal(location, data.forecast, []);
+      setResCache(cacheKey(adm4, "terminal"), { expires: Date.now() + CACHE_TTL_MS, body, headers: {} });
+    }
+
+    async function htmlView(adm4: string): Promise<void> {
+      const data = await fetchForecast(adm4);
+      const location = toLocationInfo(data);
+      const body = renderHTML(location, data.forecast, []);
+      setResCache(cacheKey(adm4, "html"), { expires: Date.now() + CACHE_TTL_MS, body, headers: {} });
+    }
+  },
 } satisfies ExportedHandler<Env>;
 
 // ===== Rendered-response cache (see PERF.md) =====
