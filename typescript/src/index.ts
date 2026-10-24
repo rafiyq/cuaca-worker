@@ -457,7 +457,8 @@ async function serveWeatherView(
     return finalizeResponse(body, baseHeaders, "BYPASS", `upstream;dur=${Date.now() - t0}, cache;desc=BYPASS`, adm4, source, view);
   }
 
-  const key = cacheKey(adm4, view);
+  const viewKey = lang === "en" ? `${view}:en` : view;
+  const key = cacheKey(adm4, viewKey);
 
   // 1) Memory cache
   const memHit = resCache.get(key);
@@ -467,7 +468,7 @@ async function serveWeatherView(
 
   // 2) Cache API (per-colo edge cache)
   const cache = caches.default;
-  const cacheUrl = new Request(`https://cuaca.internal/cache/v1/${encodeURIComponent(adm4)}/${view}`);
+  const cacheUrl = new Request(`https://cuaca.internal/cache/v1/${encodeURIComponent(adm4)}/${viewKey}`);
   const edgeHit: Response | undefined = await cache.match(cacheUrl);
   if (edgeHit) {
     const body = await edgeHit.text();
