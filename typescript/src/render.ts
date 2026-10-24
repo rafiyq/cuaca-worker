@@ -309,7 +309,7 @@ export function renderTerminal(
   const currentHour = new Date(current.time).getHours();
   const currentIcon = getAsciiIcon(current.weather || 0, currentHour).map(expandColorTokens);
   
-  lines.push(`    ${currentIcon[0]}    ${current.condition}`);
+  lines.push(`    ${currentIcon[0]}    ${lang === "en" ? current.conditionEn : current.condition}`);
   lines.push(`    ${currentIcon[1]}    ${ansiTemp(current.temp)}`);
   lines.push(`    ${currentIcon[2]}    ${formatWind(current.windSpeed, current.windDir)}`);
   lines.push(`    ${currentIcon[3]}    ${current.humidity}% ${LABELS[lang].humidity}`);
@@ -384,7 +384,7 @@ export function renderTerminal(
       const icon = getAsciiIcon(f.weather || 0, hour).map(expandColorTokens);
       
       colBlocks.push([
-        padCell(` ${icon[0]} ` + ` ${f.condition} `, cellW),
+        padCell(` ${icon[0]} ` + ` ${lang === "en" ? f.conditionEn : f.condition} `, cellW),
         padCell(` ${icon[1]} ` + ` ${ansiTemp(f.temp)} `, cellW),
         padCell(` ${icon[2]} ` + ` ${formatWind(f.windSpeed, f.windDir)} `, cellW),
         padCell(` ${icon[3]} ` + ` ${f.cloudCover}% cloud R${f.rainProb}% `, cellW),

@@ -854,7 +854,7 @@ async function generateAIReport(
   
   const prompt = stylePrompts[style as keyof typeof stylePrompts] || stylePrompts.brief;
   
-  const response = await ai.run("@cf/meta/llama-3.1-8b-instruct", {
+  const response = await ai.run("@cf/meta/llama-3.1-8b-instruct-fp8", {
     messages: [
       { role: "system", content: "You are a helpful Indonesian weather assistant. Write in Indonesian. Keep responses natural and helpful." },
       { role: "user", content: `${prompt}
