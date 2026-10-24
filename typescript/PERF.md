@@ -42,6 +42,13 @@ Current profile (from `src/index.ts`):
 - Tests: Cache API works under vitest-pool-workers/miniflare; keep a bypass
   (`?nocache=1`) for deterministic tests if needed.
 
+## Cron pre-warm verification (v0.5.0)
+
+Deployed with `*/5 * * * *` trigger. First requests after cron show
+`upstream;dur=32ms` (vs ~600ms cold BMKG fetch) — the upstream edge
+cache is warm even when the render cache misses. Render cache is only
+warm for the cron isolate; other isolates/colos warm on first real request.
+
 ## Production verification (v0.1.2, live)
 
 Anycast alternates requests between colos (e.g. SIN/CGK); within one colo
