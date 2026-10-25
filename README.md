@@ -35,17 +35,25 @@ caching semantics. The TypeScript version is the reference implementation.
 ## Structure
 
 ```
-typescript/          # production Cloudflare Worker
-├── src/index.ts     # routes, BMKG/wilayah clients, response cache
-├── src/render.ts    # ANSI + HTML renderers, ASCII icons
-├── LAYOUT.md        # web UI wireframes + CSS class map
-├── PERF.md          # performance plan & status
-└── wrangler.jsonc
-rust/                # experimental workers-rs port
-├── src/             # bmkg, wilayah, render, ai modules
-├── Cargo.toml
-├── wrangler.toml
-└── TOOLCHAIN_ISSUES.md   # the wasm-bindgen externref blocker, documented
+typescript/              # production Cloudflare Worker
+├── src/
+│   ├── index.ts         # route dispatch + scheduled handler
+│   ├── cache.ts         # response cache (memory + edge)
+│   ├── bmkg.ts          # BMKG forecast + warnings client
+│   ├── wilayah.ts       # wilayah service binding + location resolution
+│   ├── ai.ts            # AI report generation
+│   ├── format.ts        # custom format templates
+│   ├── openapi.ts       # OpenAPI 3.1 spec
+│   ├── types.ts         # shared types
+│   └── render.ts        # terminal + HTML + prometheus renderers
+├── wrangler.jsonc
+├── PERF.md              # performance plan & status
+└── LAYOUT.md            # web UI wireframes
+rust/                    # experimental workers-rs port (parked)
+docs/
+├── CHANGELOG.md          # release history
+├── CONTRIBUTING.md       # dev setup, testing, releasing
+└── history/              # archived design docs
 ```
 
 ## Quick start
