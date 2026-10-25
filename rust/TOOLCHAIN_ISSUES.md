@@ -1,147 +1,79 @@
 # Toolchain Issues Tracker
 
-## Status: 🔴 BLOCKED
+## Status: ✅ UNBLOCKED (2026-10-25)
 
-Both build approaches fail to produce working Workers.
-
----
-
-## Approach 1: wasm-pack + worker@0.4
-
-### Build
-```bash
-cargo build --target wasm32-unknown-unknown --release
-wasm-pack build --target web --out-dir dist/wasm --no-opt
-```
-
-### Error
-```
-TypeError: Cannot read properties of undefined (reading 'method')
-    at __wbg_method_... (worker.js:1312:34)
-    at wasm://wasm/...:wasm-function[243]:0x703ee
-```
-
-### Root Cause
-wasm-bindgen generated glue code calls `.method` on undefined. The generated `fetch` function expects `Request` object with `.method` property, but Cloudflare Workers' `Request` implementation differs from web standard.
-
-### Worker Crate Version
-- `worker = "0.4"` with `features = ["http"]`
-- Uses `#[event(fetch)]` macro
-- Exports `fetch(req, env, ctx)` function
-
-### wasm-bindgen Output
-Generates `fetch(req, env, ctx)` that calls `wasm.fetch(addHeapObject(req), ...)`
-
-### Hypothesis
-The `worker` crate's `Request` type doesn't match what wasm-bindgen expects when targeting `web`. The wasm-bindgen `web` target assumes browser `Request` interface.
+The externref build blocker was resolved by removing `strip = true` from
+`[profile.release]` in Cargo.toml.
 
 ---
 
-## Approach 2: worker-build + worker@0.8.7
+## Resolution
 
-### Build
-```bash
-worker-build --release
-```
+**Root cause:** `strip = true` removes the `reference-types` custom section
+from the compiled wasm binary. wasm-bindgen 0.2.129 requires that section to
+generate externref catch wrappers. Without it:
 
-### Error
 ```
 error: failed to generate catch wrappers
 Caused by: externref table required for catch wrappers
 ```
 
-### Root Cause
-wasm-bindgen 0.2.129 with `--force-enable-abort-handler` requires `externref` table for catch unwinding. The wasm32-unknown-unknown target doesn't enable this by default.
+**Fix:** remove `strip = true` from `[profile.release]` in Cargo.toml.
 
-### Worker Crate Version
-- `worker = "0.8.7"` with `features = ["http"]`
-- Uses `#[worker::send]` attribute (newer API)
-- worker-build uses wasm-bindgen with `--target module`
+**Upstream issues:**
+- [workers-rs#1014](https://github.com/cloudflare/workers-rs/issues/1014) —
+  "Can no longer compile with `strip = true`" (open, 2026-06-16)
+- [workers-rs#1015](https://github.com/cloudflare/workers-rs/pull/1015) —
+  proposed fix: re-add the target feature section (closed without merge)
+- Upstream fix pending: [wasm-bindgen#5205](https://github.com/rustwasm/wasm-bindgen/pull/5205)
+- Cloudflare docs still recommend `strip = true` for size — which now breaks builds
 
-### Attempted Fixes
-- `RUSTFLAGS='-C target-feature=+externref'` → ignored by wasm32 target
-- `--no-typescript` flag doesn't affect this
-
-### Hypothesis
-Need to either:
-1. Use older wasm-bindgen (0.2.99) without abort handler
-2. Patch worker-build to remove `--force-enable-abort-handler`
-3. Enable `externref` in wasm target (requires nightly + `-Z wasm-externref`)
+**Workaround:** `wasm-opt` (run by worker-build) handles size optimization
+after wasm-bindgen, so `strip = true` is unnecessary anyway.
 
 ---
 
-## Investigation Plan
+## Build (works now)
 
-### Phase 1: Understand wasm-bindgen expectations
-- [ ] Check what `worker` crate exports for `Request` type
-- [ ] Compare with browser `Request` interface
-- [ ] Test wasm-bindgen `web` vs `module` target differences
-
-### Phase 2: Try alternative build configurations
-- [ ] wasm-pack with `--target bundler` instead of `--target web`
-- [ ] wasm-pack with `--target no-modules`
-- [ ] Manual wasm-bindgen invocation with custom flags
-
-### Phase 3: Try worker crate upgrade path
-- [ ] worker@0.10+ with wrangler 3.80+ native support
-- [ ] Use wrangler's built-in Rust compilation (`wrangler deploy` auto-detects Cargo.toml)
-
-### Phase 4: Workarounds
-- [ ] Fork worker-build to remove problematic flags
-- [ ] Use wasm-bindgen 0.2.99
-- [ ] Write minimal JavaScript glue manually
-
----
-
-## Resources
-
-- [worker-build issues](https://github.com/cloudflare/worker-build/issues)
-- [wasm-bindgen catch wrappers](https://github.com/rustwasm/wasm-bindgen/issues/3258)
-- [Cloudflare Workers Rust examples](https://github.com/cloudflare/workers-rs/tree/main/examples)
-- [wrangler Rust support](https://developers.cloudflare.com/workers/languages/rust/)
-
----
-
-## Next Steps
-
-1. **Immediate**: Try `wasm-pack build --target bundler` to see if module format works better
-2. **Short-term**: Test worker@0.10 with wrangler native build
-3. **Medium-term**: File issues upstream if bugs confirmed
-4. **Fallback**: Manual JS glue if toolchain doesn't mature
-## Latest Attempt: wasm-pack build
-
-### Build Success ✅
-- `wasm-pack build --target web --out-dir dist/wasm --no-opt` works
-- `cargo build --target wasm32-unknown-unknown --release` works
-
-### Runtime Failure ❌
+```bash
+cd rust
+worker-build --release          # compiles + wasm-bindgen + esbuild → build/index.js
+npx wrangler dev --local --port 8787
 ```
-Uncaught TypeError: Cannot read properties of undefined (reading 'method')
-```
-The wasm-pack generated glue code (target web) expects browser-like Request/Response objects with `.method` property, but Cloudflare Workers provides different implementations.
 
-### Root Cause Analysis
-| Tool | Build | Runtime |
-|------|-------|---------|
-| worker-build | ❌ externref required | Would work (matches CF types) |
-| wasm-pack (web) | ✅ | ❌ glue code mismatch |
-| wasm-pack (bundler) | ✅ | ❌ fetch not a function |
-| wasm-pack (no-modules) | ✅ | ❌ init not a function |
+## Output
 
-### The Core Conflict
-- **worker crate 0.8** expects wasm-bindgen output matching Cloudflare Workers' `Request`/`Response`/`Env` types
-- **worker-build** uses wasm-bindgen with `--force-enable-abort-handler` → requires `externref` → fails
-- **wasm-pack** generates browser-compatible glue code → doesn't match CF Workers' `Request`/`Response` types
+- `build/index.js` — 23KB esbuild bundle
+- `build/index_bg.wasm` — 1.7MB raw (~600KB gzipped estimate)
 
-### Possible Solutions (Future)
-1. **Fork worker-build** - Remove `--force-enable-abort-handler` flag
-2. **Use wasm-bindgen 0.2.99** - Before abort handler flag
-3. **Manual wasm-bindgen** - Custom flags without abort handler
-4. **Wait for toolchain maturation** - worker 0.10+ with wrangler native support
-5. **Use wrangler's native Rust support** (wrangler 3.80+)
+## Verified endpoints (2026-10-25)
 
-### Current Status
-- ✅ TypeScript version: Production ready (cuaca-worker-ts/)
-- ✅ Rust business logic: Complete and compiles
-- ⚠️ Toolchain: Blocked on wasm-bindgen externref issue
-- 📋 Recommendation: Deploy TypeScript version, track Rust toolchain
+| Endpoint | Status |
+|----------|--------|
+| `GET /` (terminal) | ✅ full ASCII weather report with cuaca-rs 6-panel charts |
+| `GET /:location` | ✅ by name (searches wilayah) |
+| `GET /:location?format=3` | ✅ short format |
+| `GET /api/forecast?adm4=...` | ✅ JSON |
+| `GET /api/warnings?adm4=...` | ✅ JSON (CAP XML parsed) |
+| `GET /` with browser Accept | ✅ HTML page |
+| `GET /api/resolve?q=...` | ✅ JSON search |
+| `GET /api/nearest?lat=&lon=` | ✅ JSON reverse geocode |
+| `GET /api/locate?lat=&lon=` | ✅ JSON admin hierarchy |
+
+## Architecture notes
+
+The Rust version compiles the entire [cuaca-rs](https://github.com/rafiyq/cuaca-rs)
+library into the wasm binary — models, 6-panel chart rendering, 5-line ASCII
+icons, warning matching. This gives it richer terminal output than the TS
+version (bar charts per time slot vs a plain table), at the cost of a
+significantly larger binary.
+
+## Historical approaches (all superseded)
+
+### Approach 1: wasm-pack + worker@0.4
+Failed: wasm-bindgen `web` target generates browser-compatible glue code
+that doesn't match Cloudflare Workers' Request/Response types.
+
+### Approach 2: worker-build + worker@0.8.7 (before the strip fix)
+Failed: `externref table required for catch wrappers` — caused by
+`strip = true` removing the `reference-types` section.

@@ -1,10 +1,10 @@
-name = "cuaca"
-main = "dist/worker.js"
+name = "cuaca-rust"
+main = "build/index.js"
 compatibility_date = "2025-10-13"
 compatibility_flags = ["nodejs_compat"]
 
-[build.upload]
-format = "wasm"
+[build]
+command = "worker-build --release"
 
 [vars]
 RUST_LOG = "info"
