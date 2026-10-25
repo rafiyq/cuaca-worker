@@ -27,7 +27,7 @@ Weather report: Kemayoran, Kemayoran
 | Implementation | Path | Status |
 |----------------|------|--------|
 | **TypeScript** | [`typescript/`](./typescript) | ✅ **Production** — deploy with `wrangler deploy` |
-| **Rust** | [`rust/`](./rust) | 🧪 Experimental — compiles, parked on a [wasm-bindgen toolchain issue](./rust/TOOLCHAIN_ISSUES.md) |
+| **Rust** | [`rust/`](./rust) | ✅ Working — builds and serves; needs feature parity for production |
 
 Both share the same product spec: BMKG codes, ASCII icons, endpoints,
 caching semantics. The TypeScript version is the reference implementation.
@@ -49,7 +49,7 @@ typescript/              # production Cloudflare Worker
 ├── wrangler.jsonc
 ├── PERF.md              # performance plan & status
 └── LAYOUT.md            # web UI wireframes
-rust/                    # experimental workers-rs port (parked)
+rust/                    # workers-rs port (working, needs feature parity)
 docs/
 ├── CHANGELOG.md          # release history
 ├── CONTRIBUTING.md       # dev setup, testing, releasing
